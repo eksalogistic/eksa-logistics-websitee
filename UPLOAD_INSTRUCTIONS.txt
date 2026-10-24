@@ -1,0 +1,7 @@
+EKSA SEO WEBSITE UPDATE
+
+Upload the contents of this folder to the ROOT of the GitHub repository eksalogistic/eksa-logistics-websitee. Keep the 4 named folders and their index.html files in those folders. Replace existing root index.html, styles.css, script.js; add robots.txt, sitemap.xml and same-day-delivery.jpg. DO NOT delete your other existing website assets (logos, favicon, gta-coverage.jpg, etc.).
+
+IMPORTANT: This package includes the latest same-day delivery image fix and the working forms script from the last update. It does not change the Google Apps Script endpoint.
+
+After publishing, open https://www.eksalogistic.ca/sitemap.xml and https://www.eksalogistic.ca/courier-services/ to verify deployment. Submit the sitemap URL in Google Search Console. Indexing/rankings are not guaranteed. Driver page is an expression-of-interest page, not a fabricated job vacancy.
