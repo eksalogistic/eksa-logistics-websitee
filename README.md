@@ -28,3 +28,7 @@ Open `index.html` in a browser, or upload the folder to a GitHub repository and 
 - `CNAME` — planned custom domain
 
 This is a static public website, not the secure EKSA MedConnect pharmacy delivery application.
+
+
+## Updated October 2026
+Brand updated to EKSA Logistic, user-supplied logo at repository root (`eksa-logo.jpg`), and new GTA coverage section on Home and About. `gta-coverage.jpg` is the visual asset for this section. Upload **all files** from this folder into the repository root, including the image, replacing existing versions. Forms remain demo-only and are not connected to an inbox.
