@@ -32,3 +32,9 @@ This is a static public website, not the secure EKSA MedConnect pharmacy deliver
 
 ## Updated October 2026
 Brand updated to EKSA Logistic, user-supplied logo at repository root (`eksa-logo.jpg`), and new GTA coverage section on Home and About. `gta-coverage.jpg` is the visual asset for this section. Upload **all files** from this folder into the repository root, including the image, replacing existing versions. Forms remain demo-only and are not connected to an inbox.
+
+
+## Website forms integration (October 2026)
+The existing business, pharmacy, driver and general contact forms POST JSON to the Google Apps Script URL in script.js. Google Apps Script receives the request using doPost and appends a row to the corresponding sheet. General contact is routed by topic; otherwise to Business Inquiries.
+
+IMPORTANT: The browser uses a `no-cors` request because Apps Script does not return normal cross-origin CORS headers. It cannot verify whether a submission was saved. Before promoting these forms, test each form on the deployed website and confirm the row in Google Sheets and notification at info@eksalogistic.ca. This endpoint is public; add rate limiting, spam protection and server-side validation before using it at scale. Never request sensitive medical/patient data or identification documents through these forms.
