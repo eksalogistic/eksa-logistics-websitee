@@ -1,11 +1,24 @@
-# EKSA Logistic — upgraded inquiry forms
+# EKSA Logistic — Protected Website Forms
 
-Upload the contents of this folder to the existing GitHub Pages repository root, replacing existing files. Keep the current Google Apps Script deployment URL; it is already embedded in script.js.
+This package contains the website files AND the replacement Google Apps Script in `Google_Apps_Script_Code.gs.txt`.
 
-Business and pharmacy forms now collect delivery areas, frequency, pickup location, and estimated volume. Driver form collects vehicle, availability, experience, and licence confirmation without requesting documents. Data is sent through the existing script fields, with additional details saved in the Message column.
+## Required setup (cannot be performed from the static website)
+1. Sign in to eksalogistic@gmail.com, open **EKSA Logistic — Website Inquiries** spreadsheet, then Extensions → Apps Script.
+2. Replace ALL code in `Code.gs` with the contents of `Google_Apps_Script_Code.gs.txt` and Save.
+3. Deploy → **Manage deployments** → select your existing Web app → Edit (pencil) → Version: **New version** → Deploy. This retains the existing /exec URL. Do NOT create a separate deployment unless you also update the website URL.
+4. In GitHub, upload the extracted website files (`index.html`, `script.js`, `styles.css`, image assets, `CNAME`). Do not upload the `.gs.txt` script to GitHub; it is server code for Apps Script only.
+5. Test a legitimate business, pharmacy and driver inquiry; confirm entries in Sheets and notification email. Test an immediate repeat from the same email and confirm it is blocked.
 
-Basic client-side spam friction includes a hidden honeypot, minimum completion time and 60-second repeat-submit delay. These do NOT constitute reliable server-side spam protection: a bot can bypass browser JavaScript. Add server-side rate limiting/CAPTCHA validation using an appropriate backend before high-volume production use.
+## Protection implemented
+- Server-side honeypot and minimum/maximum form completion time.
+- Validated type, name, email, data types, character lengths and request size.
+- Server-side 2-minute repeat limit, max 3 submissions per email per day, max 100 total submissions per day.
+- Spreadsheet formula injection defense; locks to reduce race conditions.
+- Notification only after a successful spreadsheet append.
 
-The Apps Script endpoint uses a no-cors request, so the browser cannot verify the response. A 'sent' notice is not proof of delivery; verify test records in Sheets and notification emails. Public Apps Script web apps should not receive sensitive patient or driver documents.
-
-Test all three forms after upload. No Apps Script redeployment is required for these field additions because extra details are serialized into the existing message field.
+## Important limitations
+- The public Apps Script endpoint can still be targeted by automated or distributed spam. These checks reduce abuse but are not a full CAPTCHA/WAF.
+- Google Apps Script public cross-origin responses cannot be reliably read by the static website, so the browser cannot guarantee successful delivery; check Sheets.
+- Public GitHub Pages cannot hide the Apps Script URL or keep secrets.
+- No patient, prescription, or driver identity documents should be submitted.
+- Daily counters in Script Properties are retained over time (small scale); clean up old keys periodically if required.

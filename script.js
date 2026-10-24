@@ -12,6 +12,7 @@ async function submitEksaForm(event){
   if(Date.now()-Number(sessionStorage.getItem(throttleKey)||0)<60000){form.querySelector('.form-status').textContent='Please wait one minute before sending another inquiry.';return;}
   const kind=form.dataset.kind;
   const payload={
+    website:values.website||'', elapsedMs:Date.now()-Number(form.dataset.startedAt||0),
     formType:kind==='contact'?(values.topic==='Pharmacy partnership'?'pharmacy':values.topic==='Driver opportunity'?'driver':'business'):kind,
     name:values.contactName||values.fullName||'',
     email:values.email||'',phone:values.phone||'',
