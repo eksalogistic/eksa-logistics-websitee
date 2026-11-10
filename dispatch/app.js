@@ -162,7 +162,7 @@ setView(card("Delivery stops",'<p>Update stop status after delivery. Status chan
 async function companyLoad(){
 orders=await rest("orders","select=id,external_order_id,recipient_name,address_line1,city,postal_code,status,stop_sequence,route_id,delivery_date,client_id&delivery_date=eq."+date()+"&order=stop_sequence.asc&limit=750");
 if(tab==="company"){setView(tiles([metric(orders.length,"Orders"),metric(orders.filter(x=>x.status==="delivered").length,"Delivered"),metric(orders.filter(x=>x.status==="out_for_delivery").length,"Out for delivery"),metric(orders.filter(x=>x.status==="failed").length,"Failed")])+card("Delivery visibility",'<p>Your company can see only its own orders, stop sequence, delivery statuses, and read-only map. Map changes are reserved for EKSA admin and assigned drivers.</p>'+table(["Order","Customer","City","Status"],orders.map(o=>'<tr>'+cell(o.external_order_id)+cell(o.recipient_name)+cell(o.city)+'<td>'+pill(o.status)+'</td></tr>'))));return}
-if(tab==="companyorders"){setView(card("Company delivery orders",'<p>Your company can print bag barcode labels. EKSA and drivers use these to confirm pickup. The delivery map remains read-only.</p><div class="flex"><div class="field"><label>Label paper size</label><select id="labelSize"><option value="thermal">4×6 thermal</option><option value="letter">Letter</option><option value="a4">A4</option></select></div></div>'+table(["Order","Customer / address","Stop","Status","Bag labels"],orders.map(o=>'<tr>'+cell(o.external_order_id)+cell(o.recipient_name+" · "+o.address_line1+", "+o.city)+cell(o.stop_sequence??"—")+'<td>'+pill(o.status)+'</td><td><button class="minibtn" data-print-label="'+escape(o.id)+'">Print bag labels</button></td></tr>'))));return}
+if(tab==="companyorders"){setView(card("Submit a new order",'<p>Orders submitted here appear in EKSA Admin automatically. Each bag gets its own barcode label.</p><form id="companyOrderForm"><div class="cols"><div><label>Order reference</label><input name="order_id" required maxlength="100" placeholder="Your order ID"></div><div><label>Delivery date</label><input type="date" name="delivery_date" value="'+date()+'" required></div><div><label>Customer name</label><input name="customer_name" required maxlength="200"></div><div><label>Phone (optional)</label><input type="tel" name="phone" maxlength="30"></div><div><label>Street address</label><input name="address" required maxlength="500"></div><div><label>City</label><input name="city" required maxlength="100"></div><div><label>Postal code</label><input name="postal_code" required maxlength="20"></div><div><label>Number of bags</label><input name="bag_count" type="number" value="1" min="1" max="20" required></div></div><button type="submit" style="margin-top:16px">Submit order</button></form>')+card("Company delivery orders",'<p>Your company can print bag barcode labels. EKSA and drivers use these to confirm pickup. The delivery map remains read-only.</p><div class="flex"><div class="field"><label>Label paper size</label><select id="labelSize"><option value="thermal">4×6 thermal</option><option value="letter">Letter</option><option value="a4">A4</option></select></div></div>'+table(["Order","Customer / address","Stop","Status","Bag labels"],orders.map(o=>'<tr>'+cell(o.external_order_id)+cell(o.recipient_name+" · "+o.address_line1+", "+o.city)+cell(o.stop_sequence??"—")+'<td>'+pill(o.status)+'</td><td><button class="minibtn" data-print-label="'+escape(o.id)+'">Print bag labels</button></td></tr>'))));return}
 if(tab==="companymap"){selectRouteView("Company delivery map · Read only");return}
 if(tab==="invoices"){const invoices=await rest("invoices","select=invoice_number,period_start,period_end,total,currency,status,due_date&order=created_at.desc&limit=150");setView(card("Invoices",'<p>Only your company’s finalized and paid invoices appear here.</p>'+table(["Number","Period","Amount","Due","Status"],invoices.map(i=>'<tr>'+cell(i.invoice_number)+cell(i.period_start+" – "+i.period_end)+cell(cash(i.total,i.currency))+cell(i.due_date)+'<td>'+pill(i.status)+'</td></tr>'))));return}
 }
@@ -224,6 +224,22 @@ const form=e.target;if(!form?.id)return;e.preventDefault();
 const b=e.submitter;if(b)b.disabled=true;
 const data=new FormData(form);
 try{
+if(form.id==="companyOrderForm"){
+const payload={
+order_id:String(data.get("order_id")).trim(),
+delivery_date:String(data.get("delivery_date")),
+customer_name:String(data.get("customer_name")).trim(),
+phone:String(data.get("phone")||"").trim(),
+address:String(data.get("address")).trim(),
+city:String(data.get("city")).trim(),
+postal_code:String(data.get("postal_code")).trim(),
+bag_count:Number(data.get("bag_count"))
+};
+const result=await edge("eksa-company-submit",payload);
+await load();
+notify(result.existing_order?"That order reference already exists; no duplicate was added.":"Order received by EKSA. "+result.barcodes.length+" bag label(s) generated.","ok");
+return;
+}
 if(form.id==="createRoute"){
 const r=await edge("eksa-dispatch",{action:"create_batched_city_routes",city:String(data.get("city")).trim(),delivery_date:date(),max_bags:Number(data.get("bags"))});
 notify("Created "+r.routes_created+" routes with "+r.orders_assigned+" orders.","ok");await load();return;
