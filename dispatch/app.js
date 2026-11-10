@@ -255,15 +255,30 @@ await edge("eksa-dispatch",{action:"assign_driver",route_id:b.dataset.assign,dri
 await load();notify("Route assigned to driver. It is visible in their dashboard.","ok");return;
 }
 if(b.dataset.passwordDriver){
-const password=prompt("Set a new password for "+b.dataset.driverName+". Use at least 12 characters. Do not share it in chat.");
-if(password===null)return;
-if(password.length<12||password.length>128||/\\s/.test(password))return notify("Password must be 12–128 characters with no spaces.");
-if(!confirm("Confirm setting this driver's password? The previous password will stop working."))return;
-b.disabled=true;
+const old=document.getElementById("eksaPasswordDialog");if(old)old.remove();
+const dialog=document.createElement("dialog");dialog.id="eksaPasswordDialog";dialog.style.cssText="border:1px solid #d8dff1;border-radius:16px;box-shadow:0 20px 70px #101a3e50;max-width:420px;width:90%;padding:23px";
+const title=document.createElement("h2");title.textContent="Set password for "+b.dataset.driverName;
+const explain=document.createElement("p");explain.textContent="This replaces the existing password. The driver account and assigned routes remain unchanged.";
+const form=document.createElement("form");
+const field=document.createElement("input");field.type="password";field.autocomplete="new-password";field.minLength=12;field.maxLength=128;field.required=true;field.placeholder="New password (12+ characters)";
+const confirmField=document.createElement("input");confirmField.type="password";confirmField.autocomplete="new-password";confirmField.required=true;confirmField.placeholder="Confirm new password";confirmField.style.marginTop="10px";
+const actions=document.createElement("div");actions.className="actions";actions.style.marginTop="16px";
+const cancel=document.createElement("button");cancel.type="button";cancel.className="mutedbtn";cancel.textContent="Cancel";cancel.onclick=()=>dialog.close();
+const save=document.createElement("button");save.type="submit";save.textContent="Save password";
+actions.append(cancel,save);form.append(field,confirmField,actions);dialog.append(title,explain,form);document.body.append(dialog);dialog.showModal();
+dialog.addEventListener("close",()=>dialog.remove(),{once:true});
+form.addEventListener("submit",async event=>{
+event.preventDefault();
+const password=field.value;
+if(password.length<12||password.length>128||/\s/.test(password)){alert("Password must be 12–128 characters without spaces.");return;}
+if(password!==confirmField.value){alert("Passwords do not match.");return;}
+save.disabled=true;cancel.disabled=true;
 try{
 await edge("eksa-users",{action:"set_driver_password",driver_id:b.dataset.passwordDriver,new_password:password});
-notify("Driver password updated. They can now sign in with their driver email and this password.","ok");
-}finally{b.disabled=false}
+field.value="";confirmField.value="";dialog.close();
+notify("Driver password updated. They can now sign in with their email and new password.","ok");
+}catch(error){alert(error.message);save.disabled=false;cancel.disabled=false;}
+});
 return;
 }
 if(b.dataset.driver){
