@@ -97,7 +97,7 @@ setView(card("Create routes",'<form class="flex" id="createRoute"><div class="fi
 function renderDrivers(){
 setView(tiles([metric(drivers.length,"Registered"),metric(drivers.filter(x=>x.active).length,"Active"),metric(drivers.filter(x=>!x.active).length,"Inactive"),metric(routes.length,"Routes in system")])+
 card("Invite driver",'<form id="inviteDriver" class="flex"><div class="field"><label>Name</label><input name="name" required></div><div class="field"><label>Email</label><input name="email" type="email" required></div><div class="field"><label>Vehicle capacity (bags)</label><input name="capacity" type="number" min="1" max="300" value="100" required></div><button>Send invitation</button></form><p>Already registered? <a href="../eksa-password.html" target="_blank" rel="noopener">Reset password</a>; do not invite twice.</p>')+
-card("Driver team",table(["Driver","Status","Capacity","Routes","Action"],drivers.map(x=>'<tr>'+cell(x.display_name)+'<td>'+pill(x.active?"Active":"Inactive")+'</td>'+cell(x.vehicle_capacity)+cell(routes.filter(r=>r.driver_id===x.id).length)+'<td><button class="minibtn mutedbtn" data-driver="'+escape(x.id)+'" data-active="'+(!x.active)+'">'+(x.active?"Deactivate":"Reactivate")+'</button></td></tr>'))));
+card("Driver team",table(["Driver","Status","Capacity","Routes","Action"],drivers.map(x=>'<tr>'+cell(x.display_name)+'<td>'+pill(x.active?"Active":"Inactive")+'</td>'+cell(x.vehicle_capacity)+cell(routes.filter(r=>r.driver_id===x.id).length)+'<td><div class="actions"><button class="minibtn mutedbtn" data-password-driver="'+escape(x.id)+'" data-driver-name="'+escape(x.display_name)+'">Set password</button><button class="minibtn mutedbtn" data-driver="'+escape(x.id)+'" data-active="'+(!x.active)+'">'+(x.active?"Deactivate":"Reactivate")+'</button></div></td></tr>'))));
 }
 function renderCompanies(){
 setView(card("Create company",'<form class="flex" id="createCompany"><div class="field"><label>Company name</label><input name="name" required></div><div class="field"><label>Short company code</label><input name="code" required maxlength="20"></div><div class="field"><label>Billing email</label><input name="billing" type="email"></div><button>Add company</button></form>')+
@@ -253,6 +253,18 @@ if(!select?.value)return notify("Choose a driver before assigning.");
 b.disabled=true;
 await edge("eksa-dispatch",{action:"assign_driver",route_id:b.dataset.assign,driver_id:select.value});
 await load();notify("Route assigned to driver. It is visible in their dashboard.","ok");return;
+}
+if(b.dataset.passwordDriver){
+const password=prompt("Set a new password for "+b.dataset.driverName+". Use at least 12 characters. Do not share it in chat.");
+if(password===null)return;
+if(password.length<12||password.length>128||/\\s/.test(password))return notify("Password must be 12–128 characters with no spaces.");
+if(!confirm("Confirm setting this driver's password? The previous password will stop working."))return;
+b.disabled=true;
+try{
+await edge("eksa-users",{action:"set_driver_password",driver_id:b.dataset.passwordDriver,new_password:password});
+notify("Driver password updated. They can now sign in with their driver email and this password.","ok");
+}finally{b.disabled=false}
+return;
 }
 if(b.dataset.driver){
 const active=b.dataset.active==="true";
