@@ -177,3 +177,119 @@ async function pickupCounts(routeId){
 const result=await edge("eksa-pickup-status",{route_id:routeId});
 E("scanCounts").innerHTML=tiles([metric(result.summary.total_bags,"Expected bags"),metric(result.summary.scanned_bags,"Scanned"),metric(result.summary.missing_bags,"Still to scan"),metric(result.summary.ready_to_depart?"Yes":"No","Pickup complete")])+table(["Stop","Customer","Scanned","Remaining"],result.orders.map(o=>'<tr>'+cell(o.stop_sequence??"—")+cell(o.recipient_name)+cell(o.scanned_bags+" / "+o.total_bags)+cell(o.missing_bags)+'</tr>'));
 }
+
+
+E("view").addEventListener("submit",async e=>{
+const form=e.target;if(!form?.id)return;e.preventDefault();
+const b=e.submitter;if(b)b.disabled=true;
+const data=new FormData(form);
+try{
+if(form.id==="createRoute"){
+const r=await edge("eksa-dispatch",{action:"create_batched_city_routes",city:String(data.get("city")).trim(),delivery_date:date(),max_bags:Number(data.get("bags"))});
+notify("Created "+r.routes_created+" routes with "+r.orders_assigned+" orders.","ok");await load();return;
+}
+if(form.id==="inviteDriver"){
+const mail=String(data.get("email")).trim().toLowerCase();
+await edge("eksa-users",{action:"invite_driver",email:mail,display_name:String(data.get("name")).trim(),vehicle_capacity:Number(data.get("capacity"))});
+await load();notify("Invitation sent to "+mail,"ok");return;
+}
+if(form.id==="createCompany"){
+const r=await edge("eksa-users",{action:"create_company",name:String(data.get("name")).trim(),code:String(data.get("code")).trim(),billing_email:String(data.get("billing")).trim()||null});
+await load();notify("Company created in EKSA Dispatch.","ok");return;
+}
+if(form.id==="inviteCompany"){
+const mail=String(data.get("email")).trim().toLowerCase();
+await edge("eksa-users",{action:"invite_client",email:mail,client_id:String(data.get("client"))});
+await load();notify("Company portal invitation sent to "+mail,"ok");return;
+}
+if(form.id==="rateForm"){
+await edge("eksa-owner",{action:"save_rate",driver_id:String(data.get("driver")),effective_from:String(data.get("start")),currency:"CAD",pay_per_delivery:Number(data.get("delivery")),pay_per_bag:Number(data.get("bag"))});
+notify("Driver pay rate saved. No money has been sent.","ok");return;
+}
+if(form.id==="payoutForm"){
+const action=b?.value||"payout_preview";
+const r=await edge("eksa-owner",{action,driver_id:String(data.get("driver")),start:String(data.get("start")),end:String(data.get("end"))});
+if(action==="payout_preview"){
+E("preview").textContent=r.deliveries+" deliveries · "+cash(r.total,r.currency)+" estimated · "+r.already_in_a_payout+" already in a payout · "+r.unpriced+" without rate";
+}else{await load();notify("Payout draft created for "+cash(r.total,r.currency)+". It has NOT been paid.","ok")}
+return;
+}
+if(form.id==="scan"){
+const barcode=String(data.get("barcode")).trim();
+const r=await edge("eksa-scan",{barcode});
+E("scanResult").textContent="Order "+r.order_number+" · "+r.scanned_bags+"/"+r.total_bags+" scanned · Route: "+r.route_scanned_bags+"/"+r.route_total_bags+" · "+r.route_remaining_bags+" bags remaining";
+form.reset();form.querySelector("input")?.focus();
+const rid=E("scanRoute")?.value;if(rid)await pickupCounts(rid);
+return;
+}
+}catch(err){notify(err.message)}finally{if(b)b.disabled=false}
+});
+E("view").addEventListener("change",async e=>{
+if(e.target.id==="mapRoute"){selectedRoute=e.target.value;await showRoute(selectedRoute)}
+if(e.target.id==="scanRoute"&&e.target.value){try{await pickupCounts(e.target.value)}catch(err){notify(err.message)}}
+});
+E("view").addEventListener("click",async e=>{
+const b=e.target.closest("button");if(!b)return;
+try{
+if(b.dataset.map){selectedRoute=b.dataset.map;await showRoute(selectedRoute);E("routeMapArea")?.scrollIntoView({behavior:"smooth",block:"start"});return}
+if(b.dataset.refreshmap!==undefined){await showRoute(selectedRoute);return}
+if(b.id==="saveSequence"){b.disabled=true;await saveSequence();return}
+if(b.dataset.move!==undefined){moveOrder(Number(b.dataset.move),Number(b.dataset.dir)+Number(b.dataset.move));return}
+if(b.dataset.assign){
+const select=E("view").querySelector('[data-pick="'+b.dataset.assign+'"]');
+if(!select?.value)return notify("Choose a driver before assigning.");
+b.disabled=true;
+await edge("eksa-dispatch",{action:"assign_driver",route_id:b.dataset.assign,driver_id:select.value});
+await load();notify("Route assigned to driver. It is visible in their dashboard.","ok");return;
+}
+if(b.dataset.driver){
+const active=b.dataset.active==="true";
+if(!confirm(active?"Reactivate driver?":"Deactivate driver? Existing deliveries and payouts will be retained."))return;
+b.disabled=true;
+await edge("eksa-users",{action:"set_driver_active",driver_id:b.dataset.driver,active});
+await load();notify("Driver "+(active?"reactivated.":"deactivated."),"ok");return;
+}
+if(b.dataset.payout){
+const action=b.dataset.action;
+let ref=null;
+if(action==="payout_mark_paid"){
+ref=prompt("Enter the actual payment reference (e-transfer confirmation or transaction ID). No payment will be sent by this app.");
+if(!ref?.trim())return;
+}
+if(!confirm(action==="payout_approve"?"Approve this payout draft?":"Confirm that payment has ALREADY been sent?"))return;
+b.disabled=true;
+await edge("eksa-owner",{action,payout_id:b.dataset.payout,payment_reference:ref});
+await load();notify("Payout record updated. The app does not transfer funds.","ok");return;
+}
+if(b.dataset.checkpickup!==undefined){
+const rid=E("scanRoute").value;if(!rid)return notify("Choose an assigned route first.");
+await pickupCounts(rid);return;
+}
+if(b.dataset.delivery){
+const status=b.dataset.status;
+if(!confirm("Set this delivery status to "+status.replaceAll("_"," ")+"?"))return;
+b.disabled=true;await edge("eksa-delivery",{action:"update_status",order_id:b.dataset.delivery,status});
+await load();notify("Delivery status updated. Notification event queued if the customer has a phone number.","ok");return;
+}
+}catch(err){notify(err.message)}
+});
+E("view").addEventListener("dragstart",e=>{
+const row=e.target.closest(".stoprow[draggable=true]");
+if(!row||!routeData?.editable)return;
+dragIndex=Number(row.dataset.index);row.classList.add("dragging");e.dataTransfer.effectAllowed="move";
+});
+E("view").addEventListener("dragover",e=>{
+const row=e.target.closest(".stoprow[draggable=true]");
+if(!row||dragIndex===null)return;
+e.preventDefault();e.dataTransfer.dropEffect="move";
+});
+E("view").addEventListener("drop",e=>{
+const row=e.target.closest(".stoprow[draggable=true]");
+if(!row||dragIndex===null)return;
+e.preventDefault();const to=Number(row.dataset.index),from=dragIndex;dragIndex=null;moveOrder(from,to);
+});
+E("view").addEventListener("dragend",()=>{dragIndex=null;E("view").querySelectorAll(".dragging").forEach(x=>x.classList.remove("dragging"))});
+setInterval(()=>{
+if(!token||changed||document.visibilityState!=="visible"||!selectedRoute||!E("routeMapArea"))return;
+if(["map","companymap","routes","today"].includes(tab))showRoute(selectedRoute).catch(()=>{});
+},30000);
