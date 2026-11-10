@@ -84,8 +84,36 @@ card("Customer dispatch and delivery notices",'<p>Delivery changes queue SMS eve
 table(["Event","Channel","Status","Attempts","Created","Sent"],jobs.map(x=>'<tr>'+cell(x.event_type)+cell(x.channel)+'<td>'+pill(x.status)+'</td>'+cell(x.attempts)+cell(x.created_at?new Date(x.created_at).toLocaleString("en-CA"):"—")+cell(x.sent_at?new Date(x.sent_at).toLocaleString("en-CA"):"Not sent")+'</tr>'))));
 }
 
-function renderAdminOrders(){const lookup=Object.fromEntries(clients.map(c=>[c.id,c.name]));
-setView(card("Company orders",'<p>Orders appear when companies submit them. Pickup scanning is primarily the driver’s task.</p>'+table(["Order","Company","Customer / address","City","Stop","Status"],orders.map(x=>'<tr>'+cell(x.external_order_id)+cell(lookup[x.client_id]||"—")+cell(x.recipient_name+" · "+x.address_line1+" "+(x.postal_code||""))+cell(x.city)+cell(x.stop_sequence??"—")+'<td>'+pill(x.status)+'</td></tr>'))));
+
+async function printBagLabels(orderId){
+const format=E("labelSize")?.value||"thermal";
+const tab=window.open("","_blank");
+if(!tab){notify("Allow pop-up windows for EKSA Dispatch to print labels.");return}
+tab.document.title="Preparing EKSA barcode labels";
+tab.document.body.innerHTML="<p style='font:16px system-ui;padding:24px'>Preparing EKSA bag labels…</p>";
+try{
+const response=await fetch(BASE+"/functions/v1/eksa-labels-view",{
+method:"POST",
+headers:{"apikey":KEY,"Authorization":"Bearer "+token,"Content-Type":"application/json"},
+body:JSON.stringify({tracking_id:orderId,format})
+});
+if(!response.ok){
+const err=await response.json().catch(()=>({}));
+throw Error(err.message||err.error||"Label generation failed (HTTP "+response.status+")");
+}
+const html=await response.text();
+if(!html.startsWith("<!doctype html")&&!html.startsWith("<!DOCTYPE html"))throw Error("Label service returned an unexpected format.");
+tab.document.open();tab.document.write(html);tab.document.close();
+tab.focus();
+notify("Barcode labels opened in a new tab. Choose Print or Save as PDF in your browser.","ok");
+}catch(error){tab.document.body.textContent="Could not generate labels: "+error.message;notify(error.message)}
+}
+
+function renderAdminOrders(){
+const lookup=Object.fromEntries(clients.map(c=>[c.id,c.name]));
+setView(card("Company orders",'<p>Orders arrive automatically from each company. Print a unique barcode label for <strong>each physical bag</strong>; the assigned driver scans those labels at pickup. Use 4×6 thermal labels or regular A4/letter paper.</p>'+
+'<div class="flex" style="margin:12px 0"><div class="field"><label>Label paper size</label><select id="labelSize"><option value="thermal">4×6 thermal</option><option value="letter">Letter</option><option value="a4">A4</option></select></div></div>'+
+table(["Order","Company","Customer / address","City","Stop","Status","Labels"],orders.map(x=>'<tr>'+cell(x.external_order_id)+cell(lookup[x.client_id]||"—")+cell(x.recipient_name+" · "+x.address_line1+" "+(x.postal_code||""))+cell(x.city)+cell(x.stop_sequence??"—")+'<td>'+pill(x.status)+'</td><td><button class="minibtn" data-print-label="'+escape(x.id)+'">Print bag labels</button></td></tr>'))));
 }
 function renderAdminRoutes(){
 const look=Object.fromEntries(drivers.map(x=>[x.id,x.display_name]));
@@ -134,7 +162,7 @@ setView(card("Delivery stops",'<p>Update stop status after delivery. Status chan
 async function companyLoad(){
 orders=await rest("orders","select=id,external_order_id,recipient_name,address_line1,city,postal_code,status,stop_sequence,route_id,delivery_date,client_id&delivery_date=eq."+date()+"&order=stop_sequence.asc&limit=750");
 if(tab==="company"){setView(tiles([metric(orders.length,"Orders"),metric(orders.filter(x=>x.status==="delivered").length,"Delivered"),metric(orders.filter(x=>x.status==="out_for_delivery").length,"Out for delivery"),metric(orders.filter(x=>x.status==="failed").length,"Failed")])+card("Delivery visibility",'<p>Your company can see only its own orders, stop sequence, delivery statuses, and read-only map. Map changes are reserved for EKSA admin and assigned drivers.</p>'+table(["Order","Customer","City","Status"],orders.map(o=>'<tr>'+cell(o.external_order_id)+cell(o.recipient_name)+cell(o.city)+'<td>'+pill(o.status)+'</td></tr>'))));return}
-if(tab==="companyorders"){setView(card("Company delivery orders",table(["Order","Customer / address","Stop","Status"],orders.map(o=>'<tr>'+cell(o.external_order_id)+cell(o.recipient_name+" · "+o.address_line1+", "+o.city)+cell(o.stop_sequence??"—")+'<td>'+pill(o.status)+'</td></tr>'))));return}
+if(tab==="companyorders"){setView(card("Company delivery orders",'<p>Your company can print bag barcode labels. EKSA and drivers use these to confirm pickup. The delivery map remains read-only.</p><div class="flex"><div class="field"><label>Label paper size</label><select id="labelSize"><option value="thermal">4×6 thermal</option><option value="letter">Letter</option><option value="a4">A4</option></select></div></div>'+table(["Order","Customer / address","Stop","Status","Bag labels"],orders.map(o=>'<tr>'+cell(o.external_order_id)+cell(o.recipient_name+" · "+o.address_line1+", "+o.city)+cell(o.stop_sequence??"—")+'<td>'+pill(o.status)+'</td><td><button class="minibtn" data-print-label="'+escape(o.id)+'">Print bag labels</button></td></tr>'))));return}
 if(tab==="companymap"){selectRouteView("Company delivery map · Read only");return}
 if(tab==="invoices"){const invoices=await rest("invoices","select=invoice_number,period_start,period_end,total,currency,status,due_date&order=created_at.desc&limit=150");setView(card("Invoices",'<p>Only your company’s finalized and paid invoices appear here.</p>'+table(["Number","Period","Amount","Due","Status"],invoices.map(i=>'<tr>'+cell(i.invoice_number)+cell(i.period_start+" – "+i.period_end)+cell(cash(i.total,i.currency))+cell(i.due_date)+'<td>'+pill(i.status)+'</td></tr>'))));return}
 }
@@ -243,6 +271,10 @@ if(e.target.id==="scanRoute"&&e.target.value){try{await pickupCounts(e.target.va
 E("view").addEventListener("click",async e=>{
 const b=e.target.closest("button");if(!b)return;
 try{
+if(b.dataset.printLabel){
+await printBagLabels(b.dataset.printLabel);
+return;
+}
 if(b.dataset.map){selectedRoute=b.dataset.map;await showRoute(selectedRoute);E("routeMapArea")?.scrollIntoView({behavior:"smooth",block:"start"});return}
 if(b.dataset.refreshmap!==undefined){await showRoute(selectedRoute);return}
 if(b.id==="saveSequence"){b.disabled=true;await saveSequence();return}
