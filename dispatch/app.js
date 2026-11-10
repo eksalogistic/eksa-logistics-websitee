@@ -23,7 +23,7 @@ const edge=(name,data)=>request("/functions/v1/"+name,data);
 const rest=(table,params)=>request("/rest/v1/"+table+"?"+params);
 const dayDefault=()=>{const fmt=new Intl.DateTimeFormat("en-CA",{timeZone:"America/Toronto",year:"numeric",month:"2-digit",day:"2-digit"});const ps=fmt.formatToParts(new Date());const parts=Object.fromEntries(ps.map(p=>[p.type,p.value]));return parts.year+"-"+parts.month+"-"+parts.day};
 function tabList(){
-if(role==="admin")return [["overview","Overview"],["orders","Orders"],["routes","Routes & Map"],["drivers","Drivers"],["analytics","Analytics"],["payouts","Payouts"],["companies","Companies"]];
+if(role==="admin")return [["overview","Overview"],["orders","Orders"],["routes","Routes & Map"],["drivers","Drivers"],["analytics","Analytics"],["payouts","Payouts"],["companies","Companies"],["notifications","Notifications"]];
 if(role==="driver")return [["today","My routes"],["map","Map & sequence"],["scan","Pickup scanning"],["deliveries","Deliveries"]];
 return [["company","Overview"],["companyorders","Orders"],["companymap","Delivery map"],["invoices","Invoices"]];
 }
@@ -58,6 +58,7 @@ if(tab==="orders"){orders=await rest("orders","select=id,client_id,external_orde
 if(tab==="routes"){routes=await rest("routes","select=id,city_group,route_date,status,driver_id,sequence_version&route_date=eq."+date()+"&order=created_at.desc&limit=250");renderAdminRoutes();return}
 if(tab==="drivers"){routes=await rest("routes","select=id,driver_id,status&limit=1000");renderDrivers();return}
 if(tab==="companies"){renderCompanies();return}
+if(tab==="notifications"){await renderNotifications();return}
 if(tab==="payouts"){await payoutLoad();return}
 }
 function renderOverview(){
@@ -72,6 +73,17 @@ const data=stats.chart||[],max=Math.max(1,...data.flatMap(x=>[x.orders_received,
 const bars=data.map(x=>'<div class="chartgroup"><div class="bar" title="'+x.orders_received+' incoming" style="height:'+Math.max(2,106*x.orders_received/max)+'px"></div><div class="bar green" title="'+x.deliveries_done+' delivered" style="height:'+Math.max(2,106*x.deliveries_done/max)+'px"></div><small>'+escape(x.day.slice(5))+'</small></div>').join("");
 setView(card("Incoming orders vs completed deliveries · 14 days",'<p>Blue = Incoming · Green = Completed</p><div class="chart">'+bars+'</div>')+card("Driver performance & time",'<p>Elapsed minutes from the out-for-delivery event to delivery confirmation; not pure driving time.</p>'+table(["Driver","Routes","Delivered","Failed","Average minutes"],(stats.drivers||[]).map(x=>'<tr>'+cell(x.driver_name)+cell(x.routes)+cell(x.delivered)+cell(x.failed)+cell(x.avg_minutes_from_out_for_delivery_to_dropoff??"No data")+'</tr>'))));
 }
+
+async function renderNotifications(){
+const jobs=await rest("notification_jobs","select=order_id,channel,event_type,status,attempts,created_at,sent_at,last_error&order=created_at.desc&limit=200");
+const pending=jobs.filter(x=>x.status==="pending").length;
+const sent=jobs.filter(x=>x.status==="sent").length;
+const failed=jobs.filter(x=>x.status==="failed").length;
+setView(tiles([metric(jobs.length,"Tracked events"),metric(pending,"Pending"),metric(sent,"Sent"),metric(failed,"Failed")])+
+card("Customer dispatch and delivery notices",'<p>Delivery changes queue SMS events if a customer phone is present. <strong>Messages are not being sent yet:</strong> an SMS provider and delivery worker must be configured and tested first.</p>'+
+table(["Event","Channel","Status","Attempts","Created","Sent"],jobs.map(x=>'<tr>'+cell(x.event_type)+cell(x.channel)+'<td>'+pill(x.status)+'</td>'+cell(x.attempts)+cell(x.created_at?new Date(x.created_at).toLocaleString("en-CA"):"—")+cell(x.sent_at?new Date(x.sent_at).toLocaleString("en-CA"):"Not sent")+'</tr>'))));
+}
+
 function renderAdminOrders(){const lookup=Object.fromEntries(clients.map(c=>[c.id,c.name]));
 setView(card("Company orders",'<p>Orders appear when companies submit them. Pickup scanning is primarily the driver’s task.</p>'+table(["Order","Company","Customer / address","City","Stop","Status"],orders.map(x=>'<tr>'+cell(x.external_order_id)+cell(lookup[x.client_id]||"—")+cell(x.recipient_name+" · "+x.address_line1+" "+(x.postal_code||""))+cell(x.city)+cell(x.stop_sequence??"—")+'<td>'+pill(x.status)+'</td></tr>'))));
 }
