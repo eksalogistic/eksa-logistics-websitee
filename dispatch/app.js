@@ -3,7 +3,7 @@ const BASE="https://suaghyqignjgqgwffzbt.supabase.co";
 const KEY="sb_publishable_UIbvS8Aphy-A4vidQGGXDA_f3CWTeaK";
 const E=id=>document.getElementById(id);
 let token=null,role=null,profile=null,tab=null,driver=null,drivers=[],clients=[],orders=[],routes=[],stats=null,selectedRoute=null,routeData=null,changed=false,dragIndex=null,map=null,mapLayer=null;
-const escape=x=>String(x??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;":"&quot;","'":"&#39;"}[c]));
+const escape=x=>String(x??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const date=()=>E("date").value;
 const cash=(n,c="CAD")=>new Intl.NumberFormat("en-CA",{style:"currency",currency:c}).format(Number(n||0));
 const pill=(v)=>'<span class="pill">'+escape(v)+'</span>';
