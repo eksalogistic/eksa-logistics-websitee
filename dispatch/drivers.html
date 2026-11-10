@@ -1,0 +1,71 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><meta name="robots" content="noindex,nofollow"><title>EKSA Dispatch | Driver Management</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f1f4fa;color:#1b2542;font:15px system-ui,-apple-system,"Segoe UI",sans-serif}header{background:#17254f;color:white;padding:16px 5%;display:flex;align-items:center;justify-content:space-between;gap:15px}header img{background:white;padding:6px;border-radius:8px;width:144px;height:62px;object-fit:contain}main{width:min(1110px,94%);margin:28px auto}.card{background:white;border:1px solid #dfe5f0;border-radius:16px;padding:24px;margin:18px 0;box-shadow:0 6px 23px #38486a0b}.login{max-width:440px;margin:75px auto}h1{font-size:27px;margin:7px 0 12px}h2{font-size:19px;margin:0 0 12px}p{color:#66718b;line-height:1.5}label{font-weight:700;font-size:13px;display:block;margin:12px 0 6px}input{width:100%;border:1px solid #c0c9dd;border-radius:9px;padding:12px;font:inherit}button{background:#3a4eac;border:0;border-radius:9px;color:white;font:700 14px system-ui;padding:11px 16px;cursor:pointer}button.light{background:#f1f4ff;border:1px solid #c7cfeb;color:#364bad}button:disabled{opacity:.5}.fields{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:15px}.value{font-size:30px;font-weight:850}.muted{font-size:12px;color:#63728f}.tablewrap{overflow:auto}table{border-collapse:collapse;width:100%}td,th{border-bottom:1px solid #e9edf5;padding:13px;text-align:left}th{font-size:11px;color:#78839a;text-transform:uppercase}.badge{border-radius:15px;padding:5px 10px;background:#e9edff;color:#374ba1;font-size:12px}#notice{font-weight:650;margin:10px 0}a{color:#354bad}@media(max-width:700px){.fields,.stats{grid-template-columns:1fr}header img{width:105px}td,th{padding:8px}.card{padding:16px}}
+</style></head><body><header><img src="../eksa-logo.jpg" alt="EKSA Logistics"><b>DISPATCH / OWNER</b><button id="logout" class="light" hidden>Sign out</button></header><main>
+<section id="signin" class="card login"><h1>Owner sign in</h1><p>Manage EKSA drivers using your existing administrator account.</p><form id="loginform"><label>Email</label><input id="email" type="email" autocomplete="username" required><label>Password</label><input id="password" type="password" autocomplete="current-password" required><button style="margin-top:18px;width:100%">Sign in</button></form></section>
+<section id="content" hidden><h1>Drivers & team</h1><p>Invite, deactivate or reactivate drivers without losing deliveries, route history or payout records.</p><div id="notice" role="status"></div><div class="stats"><div class="card"><div class="value" id="total">—</div><span class="muted">Registered</span></div><div class="card"><div class="value" id="active">—</div><span class="muted">Active</span></div><div class="card"><div class="value" id="inactive">—</div><span class="muted">Inactive</span></div></div>
+<div class="card"><h2>Invite driver</h2><form id="invite"><div class="fields"><div><label>Driver name</label><input id="drivername" maxlength="120" required placeholder="Name"></div><div><label>Email address</label><input id="driveremail" type="email" required placeholder="driver@example.com"></div><div><label>Vehicle capacity (bags)</label><input id="capacity" type="number" min="1" max="300" value="100" required></div></div><button style="margin-top:16px">Send invitation</button></form><p>Already registered? Do not invite twice. <a href="../eksa-password.html" target="_blank" rel="noopener noreferrer">Reset the driver's password</a>.</p></div>
+<div class="card"><h2>Driver accounts</h2><div class="tablewrap"><table><thead><tr><th>Name</th><th>Status</th><th>Capacity</th><th>Assigned routes</th><th>Manage</th></tr></thead><tbody id="rows"></tbody></table></div><button id="refresh" class="light" style="margin-top:14px">Refresh</button><p class="muted">Deactivation retains records and requires active assigned routes to be completed or reassigned first.</p></div></section></main>
+<script>
+"use strict";
+const BASE="https://suaghyqignjgqgwffzbt.supabase.co";
+const KEY="sb_publishable_UIbvS8Aphy-A4vidQGGXDA_f3CWTeaK";
+const el=id=>document.getElementById(id);
+let access=null,uid=null;
+async function api(path,payload){
+const headers={"apikey":KEY};
+if(access)headers.Authorization="Bearer "+access;
+if(payload!==undefined)headers["Content-Type"]="application/json";
+const r=await fetch(BASE+path,{method:payload===undefined?"GET":"POST",headers,body:payload===undefined?undefined:JSON.stringify(payload)});
+const d=await r.json().catch(()=>({}));
+if(!r.ok||d.success===false)throw Error(d.message||d.error_description||d.error||"HTTP "+r.status);
+return d;
+}
+function note(v){el("notice").textContent=v}
+async function update(){
+const drivers=await api("/rest/v1/drivers?select=id,display_name,active,vehicle_capacity&order=display_name&limit=300");
+const routes=await api("/rest/v1/routes?select=id,driver_id,status&limit=2000");
+el("total").textContent=drivers.length;el("active").textContent=drivers.filter(x=>x.active).length;el("inactive").textContent=drivers.filter(x=>!x.active).length;
+const tbody=el("rows");tbody.replaceChildren();
+for(const d of drivers){
+const tr=document.createElement("tr");
+for(const value of [d.display_name,d.active?"Active":"Inactive",String(d.vehicle_capacity||"—"),String(routes.filter(x=>x.driver_id===d.id).length)]){
+const td=document.createElement("td");td.textContent=value;tr.appendChild(td);
+}
+const td=document.createElement("td"),button=document.createElement("button");
+button.className="light";button.textContent=d.active?"Deactivate":"Reactivate";button.dataset.id=d.id;button.dataset.active=String(!d.active);
+td.appendChild(button);tr.appendChild(td);tbody.appendChild(tr);
+}
+if(!drivers.length){const tr=document.createElement("tr"),td=document.createElement("td");td.colSpan=5;td.textContent="No drivers registered.";tr.appendChild(td);tbody.appendChild(tr)}
+}
+el("loginform").addEventListener("submit",async e=>{
+e.preventDefault();const btn=e.submitter;btn.disabled=true;
+try{
+const s=await api("/auth/v1/token?grant_type=password",{email:el("email").value.trim(),password:el("password").value});
+access=s.access_token;uid=s.user.id;
+const p=await api("/rest/v1/profiles?select=role&user_id=eq."+encodeURIComponent(uid));
+if(!Array.isArray(p)||p[0]?.role!=="admin")throw Error("Administrator access required.");
+el("password").value="";el("signin").hidden=true;el("content").hidden=false;el("logout").hidden=false;await update();
+}catch(err){alert(err.message);access=null}finally{btn.disabled=false}
+});
+el("invite").addEventListener("submit",async e=>{
+e.preventDefault();const btn=e.submitter;btn.disabled=true;
+try{
+const mail=el("driveremail").value.trim().toLowerCase();
+await api("/functions/v1/eksa-users",{action:"invite_driver",display_name:el("drivername").value.trim(),email:mail,vehicle_capacity:Number(el("capacity").value)});
+note("Invitation sent to "+mail);e.target.reset();await update();
+}catch(err){note(err.message+" — if this driver already exists, use the password reset link.")}finally{btn.disabled=false}
+});
+el("rows").addEventListener("click",async e=>{
+const b=e.target.closest("button[data-id]");if(!b)return;
+const active=b.dataset.active==="true";
+if(!confirm(active?"Reactivate driver?":"Deactivate driver? Route and payment history will remain."))return;
+b.disabled=true;
+try{
+const r=await api("/functions/v1/eksa-users",{action:"set_driver_active",driver_id:b.dataset.id,active});
+note(r.driver.display_name+(active?" reactivated":" deactivated"));await update()
+}catch(err){note(err.message)}finally{b.disabled=false}
+});
+el("refresh").addEventListener("click",()=>update().catch(e=>note(e.message)));
+el("logout").addEventListener("click",()=>{access=null;uid=null;el("signin").hidden=false;el("content").hidden=true;el("logout").hidden=true});
+</script></body></html>
