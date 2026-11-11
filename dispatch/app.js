@@ -488,7 +488,7 @@ async function openCompanyOrderEdit(id){
 }
 
 
-let companyOrderFilter="all",companySelectedCity="all",companySearch="";
+let companyOrderFilter="all",companySelectedCity="all",companySearch="",companyOpenedRoute=null;
 async function loadCompanyDashboard(){
  const result=await edge("eksa-company-orders",{action:"dashboard",date:date()});
  window.companyDashboard=result;
@@ -497,6 +497,7 @@ async function loadCompanyDashboard(){
 }
 
 async function openCompanyRoutePanel(routeId){
+ companyOpenedRoute=routeId;
  const result=await edge("eksa-route-map",{action:"map",route_id:routeId});
  const area=E("companyLiveRoute");if(!area)return;
  const rows=result.orders||[];
@@ -536,6 +537,11 @@ const routeCards=companyRoutes.map(r=>{
  for(const o of ros){if(o.sms_status==="sent")sms.sent++;else if(o.sms_status==="delivered")sms.delivered++;else if(["failed","cancelled"].includes(o.sms_status))sms.failed++;else if(["pending","processing","submitted"].includes(o.sms_status))sms.pending++;}
  return '<div class="company-route-card"><div class="flex" style="justify-content:space-between"><strong>Route #'+escape(r.id.slice(0,8).toUpperCase())+'</strong>'+pill(r.status)+'</div><p>'+escape(r.city_group)+' · '+escape(r.orders)+' stops · '+escape(r.bags)+' bags</p><p>Driver: <strong>'+escape(r.driver_name||"Not assigned yet")+'</strong></p><p>SMS: '+sms.pending+' queued · '+sms.sent+' sent · '+sms.delivered+' phone delivered · '+sms.failed+' failed</p><button class="minibtn mutedbtn" data-company-view-route="'+escape(r.id)+'">View numbered map</button></div>'
 }).join("")||'<p class="subtle">No EKSA route has been created for these orders yet.</p>';
+
+const trendData=(d.hourly_trend||[]);
+const maxDelivered=Math.max(1,...trendData.map(x=>Number(x.delivered)||0));
+const trendHtml='<div class="eksa-hour-chart">'+trendData.map(x=>'<div class="eksa-hour"><div class="eksa-hour-bar" style="height:'+Math.max(3,Math.round(Number(x.delivered||0)/maxDelivered*100))+'%" title="'+escape(x.delivered)+' deliveries at '+escape(x.hour)+':00"></div><small>'+(x.hour%3===0?escape(x.hour)+':00':"")+'</small></div>').join("")+'</div>';
+const activityHtml=(d.recent_activity||[]).filter(x=>companySelectedCity==="all"||x.city?.toLowerCase()===companySelectedCity.toLowerCase()).slice(0,8).map(x=>'<div class="eksa-activity"><span>'+pill(x.event)+'</span><span>'+escape(x.order)+'</span><span class="subtle">'+escape(new Date(x.at).toLocaleTimeString("en-CA",{timeZone:"America/Toronto",hour:"2-digit",minute:"2-digit"}))+'</span></div>').join("")||'<p class="subtle">No recent delivery activity for this date.</p>';
 const cityCheckboxes=cityNames.map(city=>'<label class="service-city-option"><input type="checkbox" name="service_city" value="'+escape(city)+'" '+((d.approved_cities||[]).includes(city)?"checked":"")+'>'+escape(city)+'</label>').join("");
 const manual=card("Create a customer order",'<details><summary class="orders-summary-toggle">Add one order manually</summary><form id="companyOrderForm"><div class="cols">'+[
 ['order_id','Order reference'],['customer_name','Customer name'],['phone','Phone'],['address','Street address'],['address_line2','Unit / buzzer'],['city','City'],['postal_code','Postal code'],['delivery_date','Delivery date'],['bag_count','Meal bags'],['delivery_instructions','Delivery instructions']
@@ -550,7 +556,11 @@ table(["Order","Customer","Address / unit","Bags","Stop","Label","Delivery","SMS
 bulkUploadCard(false)+manual+'</div><div>'+
 card("EKSA assigned routes",routeCards+'<div id="companyLiveRoute"></div>')+
 card("Today’s delivery progress",'<p><strong>'+counts.delivered+' of '+counts.total+'</strong> orders delivered</p><div class="driver-progress"><div class="driver-progress-fill" style="width:'+(counts.total?Math.round(100*counts.delivered/counts.total):0)+'%"></div></div><p>'+counts.onRoute+' out for delivery · '+counts.pending+' pending · '+counts.failed+' failed</p>')+
+card("Delivery trend · Toronto local time",'<p>Hourly completed deliveries</p>'+trendHtml)+
+card("Recent activity",activityHtml)+
 card("Notifications",'<p><strong>On Route</strong> appears as soon as EKSA records route departure. SMS delivery status is separate: queued, provider sent, delivered to phone (only if confirmed), or failed.</p><p class="subtle">SMS requires customer consent and an activated provider. Queued is not the same as sent.</p>')+'</div></div></div>');
+ if(companyOpenedRoute&&companyRoutes.some(r=>r.id===companyOpenedRoute))openCompanyRoutePanel(companyOpenedRoute).catch(()=>{});
+ else companyOpenedRoute=null;
 }
 
 async function companyLoad(){
