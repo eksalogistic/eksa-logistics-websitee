@@ -43,7 +43,7 @@ main{width:100%;max-width:1700px;margin:0 auto;min-width:0;padding:34px 36px 55p
 
 /* Company orders command centre */
 .company-orders-workspace{display:block}
-.company-metrics{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:11px;margin-bottom:20px}
+.company-metrics{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:11px;margin-bottom:20px}
 .company-metric{min-height:98px;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:5px;border:1px solid #dfe7f7;background:#fff;color:#152a56;border-radius:15px;box-shadow:0 4px 20px #0e30600b;padding:16px;white-space:normal}
 .company-metric strong{font-size:27px;line-height:1.1;letter-spacing:-1px}
 .company-metric span{font-size:11px;color:#657997;text-align:left;font-weight:800}
