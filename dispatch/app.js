@@ -289,13 +289,64 @@ const list=routes.map(r=>'<option value="'+escape(r.id)+'">'+escape(r.city_group
 setView(card("Pickup scanning",'<p>Admin already has the order information. Scan each physical bag at pickup to confirm it is on your vehicle.</p><form id="scan" class="flex"><div class="field"><label>Enter or scan barcode</label><input name="barcode" placeholder="Scan barcode or paste ID" required autofocus></div><button>Record scan</button></form><div id="scanResult" class="subtle"></div><p>For camera scanning, use the EKSA Dispatch mobile app. The web form also works with USB/Bluetooth barcode scanners.</p>')+
 card("Bag counts by route",'<div class="flex"><div class="field"><label>Assigned route</label><select id="scanRoute"><option value="">Select route</option>'+list+'</select></div><button class="mutedbtn" data-checkpickup>Update counts</button></div><div id="scanCounts" style="margin-top:15px"></div>'));
 }
+
+async function openOrderActivity(orderId){
+document.getElementById("eksaActivityDialog")?.remove();
+const [notes,pods]=await Promise.all([
+ edge("eksa-comments",{action:"list",order_id:orderId}),
+ edge("eksa-delivery",{action:"list_pod",order_id:orderId})
+]);
+const dialog=document.createElement("dialog");dialog.id="eksaActivityDialog";dialog.style.cssText="width:min(580px,95vw);max-height:88vh;overflow:auto;border:1px solid #d4e0f1;border-radius:17px;padding:23px";
+const items=(notes.events||[]).slice(0,30);
+const photos=(pods.pod||[]);
+const canPhoto=role==="driver"&&orders.some(x=>x.id===orderId&&x.status==="delivered");
+dialog.innerHTML='<h2>Order updates · Notes & proof</h2><p>Updates are shared with the authorized EKSA team, assigned driver and the meal-prep company.</p>'+
+'<h3>Delivery proof</h3>'+(photos.length?photos.map(x=>'<div class="stoprow"><div class="stopdetail">'+escape(x.created_at||"")+" · "+escape(x.recipient_name||"Delivery confirmed")+'</div>'+(x.has_photo?'<button class="minibtn mutedbtn" data-pod="'+escape(x.id)+'">View photo</button>':"No photo")+'</div>').join(""):'<p>No proof recorded yet.</p>')+
+(canPhoto?'<form id="podUploadForm"><label>Attach delivery photo (JPG or PNG, max 5 MB)</label><input type="file" name="photo" accept="image/jpeg,image/png" required><button>Upload proof of delivery</button></form>':"")+
+'<h3 style="margin-top:20px">Comments & issues</h3>'+(items.length?'<ul>'+items.map(x=>'<li>'+escape(x.created_at||"")+" · "+escape(x.notes||"")+'</li>').join("")+'</ul>':'<p>No comments recorded.</p>')+
+'<form id="orderCommentForm"><label>Message or correction request</label><textarea name="note" maxlength="1000" placeholder="Describe the issue or necessary correction. EKSA Admin reviews any changes to active routes." required></textarea><button>Add comment</button></form>'+
+'<div style="margin-top:18px"><button class="mutedbtn" type="button" data-close>Close</button></div>';
+document.body.append(dialog);dialog.showModal();
+dialog.addEventListener("close",()=>dialog.remove(),{once:true});
+dialog.addEventListener("click",async e=>{
+const b=e.target.closest("button");if(!b)return;
+if(b.dataset.close!==undefined){dialog.close();return}
+if(b.dataset.pod){
+try{
+const d=await edge("eksa-delivery",{action:"get_pod_photo_url",order_id:orderId,pod_id:b.dataset.pod});
+window.open(d.url,"_blank","noopener");
+}catch(err){alert(err.message)}
+}
+});
+dialog.addEventListener("submit",async e=>{
+e.preventDefault();const form=e.target;const btn=e.submitter;if(btn)btn.disabled=true;
+try{
+if(form.id==="orderCommentForm"){
+const note=String(new FormData(form).get("note")||"").trim();
+if(!note)throw Error("Enter a comment first");
+await edge("eksa-comments",{action:"create",order_id:orderId,note});
+dialog.close();notify("Comment saved to the order's activity history.","ok");
+}
+if(form.id==="podUploadForm"){
+const file=new FormData(form).get("photo");
+if(!(file instanceof File)||!["image/jpeg","image/png"].includes(file.type)||file.size>5000000||file.size<100)throw Error("Choose a JPEG or PNG photo smaller than 5 MB.");
+const b64=await new Promise((resolve,reject)=>{
+ const reader=new FileReader();reader.onerror=()=>reject(Error("Could not read photo"));reader.onload=()=>resolve(String(reader.result).split(",")[1]);reader.readAsDataURL(file)});
+await edge("eksa-delivery",{action:"upload_pod_photo",order_id:orderId,photo_base64:b64});
+dialog.close();notify("Proof-of-delivery photo saved privately.","ok");
+}
+}catch(err){alert(err.message)}
+finally{if(btn)btn.disabled=false}
+});
+}
+
 function renderDeliveries(){
-setView(card("Delivery stops",'<p>Update stop status after delivery. Status changes are shared with the admin and company dashboards.</p>'+table(["Stop","Customer","Address","Phone","Instructions","Status","Action"],orders.map(o=>'<tr>'+cell(o.stop_sequence??"—")+cell(o.recipient_name)+cell(o.address_line1+", "+(o.address_line2||"")+", "+o.city)+(o.recipient_phone?'<td><a href="tel:'+escape(o.recipient_phone)+'">'+escape(o.recipient_phone)+'</a></td>':'<td>—</td>')+cell(o.delivery_instructions||"—")+'<td>'+pill(o.status)+'</td><td>'+(!["delivered","failed","cancelled"].includes(o.status)?'<div class="actions"><button class="minibtn" data-delivery="'+escape(o.id)+'" data-status="out_for_delivery">Start</button><button class="minibtn" data-delivery="'+escape(o.id)+'" data-status="delivered">Delivered</button><button class="minibtn mutedbtn" data-delivery="'+escape(o.id)+'" data-status="failed">Failed</button></div>':"Completed")+'</td></tr>'))));
+setView(card("Delivery stops",'<p>Update stop status after delivery. Status changes are shared with the admin and company dashboards.</p>'+table(["Stop","Customer","Address","Phone","Instructions","Status","Action"],orders.map(o=>'<tr>'+cell(o.stop_sequence??"—")+cell(o.recipient_name)+cell(o.address_line1+", "+(o.address_line2||"")+", "+o.city)+(o.recipient_phone?'<td><a href="tel:'+escape(o.recipient_phone)+'">'+escape(o.recipient_phone)+'</a></td>':'<td>—</td>')+cell(o.delivery_instructions||"—")+'<td>'+pill(o.status)+'</td><td>'+(!["delivered","failed","cancelled"].includes(o.status)?'<div class="actions"><button class="minibtn" data-delivery="'+escape(o.id)+'" data-status="out_for_delivery">Start</button><button class="minibtn" data-delivery="'+escape(o.id)+'" data-status="delivered">Delivered</button><button class="minibtn mutedbtn" data-delivery="'+escape(o.id)+'" data-status="failed">Failed</button><button class="minibtn mutedbtn" data-activity="'+escape(o.id)+'">Notes / issue</button></div>':'<button class="minibtn mutedbtn" data-activity="'+escape(o.id)+'">Proof & notes</button>')+'</td></tr>'))));
 }
 async function companyLoad(){
 orders=await rest("orders","select=id,external_order_id,recipient_name,address_line1,city,postal_code,status,stop_sequence,route_id,delivery_date,client_id&delivery_date=eq."+date()+"&order=stop_sequence.asc&limit=750");
 if(tab==="company"){setView(tiles([metric(orders.length,"Orders"),metric(orders.filter(x=>x.status==="delivered").length,"Delivered"),metric(orders.filter(x=>x.status==="out_for_delivery").length,"Out for delivery"),metric(orders.filter(x=>x.status==="failed").length,"Failed")])+card("Delivery visibility",'<p>Your company can see only its own orders, stop sequence, delivery statuses, and read-only map. Map changes are reserved for EKSA admin and assigned drivers.</p>'+table(["Order","Customer","City","Status"],orders.map(o=>'<tr>'+cell(o.external_order_id)+cell(o.recipient_name)+cell(o.city)+'<td>'+pill(o.status)+'</td></tr>'))));return}
-if(tab==="companyorders"){setView(bulkUploadCard(false)+card("Submit a new order",'<p>Orders submitted here appear in EKSA Admin automatically. Each bag gets its own barcode label.</p><form id="companyOrderForm"><div class="cols"><div><label>Order reference</label><input name="order_id" required maxlength="100" placeholder="Your order ID"></div><div><label>Delivery date</label><input type="date" name="delivery_date" value="'+date()+'" required></div><div><label>Customer name</label><input name="customer_name" required maxlength="200"></div><div><label>Phone (optional)</label><input type="tel" name="phone" maxlength="30"></div><div><label>Street address</label><input name="address" required maxlength="500"></div><div><label>City</label><input name="city" required maxlength="100"></div><div><label>Postal code</label><input name="postal_code" required maxlength="20"></div><div><label>Unit / buzzer</label><input name="address_line2" maxlength="200"></div><div><label>Delivery instructions</label><input name="delivery_instructions" maxlength="1000" placeholder="Gate code, customer requests"></div><div><label>Number of bags</label><input name="bag_count" type="number" value="1" min="1" max="20" required></div></div><label style="display:flex;gap:9px;align-items:center;margin:12px 0"><input type="checkbox" name="sms_consent" value="yes" style="width:auto">Customer explicitly agreed to SMS delivery updates</label><button type="submit" style="margin-top:16px">Submit order</button></form>')+card("Company delivery orders",'<p>Your company can print bag barcode labels. EKSA and drivers use these to confirm pickup. The delivery map remains read-only.</p><div class="flex"><div class="field"><label>Label paper size</label><select id="labelSize"><option value="thermal">4×6 thermal</option><option value="letter">Letter</option><option value="a4">A4</option></select></div></div>'+table(["Order","Customer / address","Stop","Status","Bag labels"],orders.map(o=>'<tr>'+cell(o.external_order_id)+cell(o.recipient_name+" · "+o.address_line1+", "+o.city)+cell(o.stop_sequence??"—")+'<td>'+pill(o.status)+'</td><td><button class="minibtn" data-print-label="'+escape(o.id)+'">Print bag labels</button></td></tr>'))));return}
+if(tab==="companyorders"){setView(bulkUploadCard(false)+card("Submit a new order",'<p>Orders submitted here appear in EKSA Admin automatically. Each bag gets its own barcode label.</p><form id="companyOrderForm"><div class="cols"><div><label>Order reference</label><input name="order_id" required maxlength="100" placeholder="Your order ID"></div><div><label>Delivery date</label><input type="date" name="delivery_date" value="'+date()+'" required></div><div><label>Customer name</label><input name="customer_name" required maxlength="200"></div><div><label>Phone (optional)</label><input type="tel" name="phone" maxlength="30"></div><div><label>Street address</label><input name="address" required maxlength="500"></div><div><label>City</label><input name="city" required maxlength="100"></div><div><label>Postal code</label><input name="postal_code" required maxlength="20"></div><div><label>Unit / buzzer</label><input name="address_line2" maxlength="200"></div><div><label>Delivery instructions</label><input name="delivery_instructions" maxlength="1000" placeholder="Gate code, customer requests"></div><div><label>Number of bags</label><input name="bag_count" type="number" value="1" min="1" max="20" required></div></div><label style="display:flex;gap:9px;align-items:center;margin:12px 0"><input type="checkbox" name="sms_consent" value="yes" style="width:auto">Customer explicitly agreed to SMS delivery updates</label><button type="submit" style="margin-top:16px">Submit order</button></form>')+card("Company delivery orders",'<p>Your company can print bag barcode labels. EKSA and drivers use these to confirm pickup. The delivery map remains read-only.</p><div class="flex"><div class="field"><label>Label paper size</label><select id="labelSize"><option value="thermal">4×6 thermal</option><option value="letter">Letter</option><option value="a4">A4</option></select></div></div>'+table(["Order","Customer / address","Stop","Status","Bag labels"],orders.map(o=>'<tr>'+cell(o.external_order_id)+cell(o.recipient_name+" · "+o.address_line1+", "+o.city)+cell(o.stop_sequence??"—")+'<td>'+pill(o.status)+'</td><td><button class="minibtn" data-print-label="'+escape(o.id)+'">Print bag labels</button><button class="minibtn mutedbtn" data-activity="'+escape(o.id)+'">Request correction / POD</button></td></tr>'))));return}
 if(tab==="companymap"){selectRouteView("Company delivery map · Read only");return}
 if(tab==="invoices"){const invoices=await rest("invoices","select=invoice_number,period_start,period_end,total,currency,status,due_date&order=created_at.desc&limit=150");setView(card("Invoices",'<p>Only your company’s finalized and paid invoices appear here.</p>'+table(["Number","Period","Amount","Due","Status"],invoices.map(i=>'<tr>'+cell(i.invoice_number)+cell(i.period_start+" – "+i.period_end)+cell(cash(i.total,i.currency))+cell(i.due_date)+'<td>'+pill(i.status)+'</td></tr>'))));return}
 }
@@ -444,6 +495,7 @@ if(e.target.id==="scanRoute"&&e.target.value){try{await pickupCounts(e.target.va
 E("view").addEventListener("click",async e=>{
 const b=e.target.closest("button");if(!b)return;
 try{
+if(b.dataset.activity){await openOrderActivity(b.dataset.activity);return;}
 if(b.dataset.optPreview){
 const result=await edge("eksa-optimize",{action:"preview",route_id:b.dataset.optPreview});
 if(result.success!==true)throw Error(result.error||"Route cannot be optimized yet");
@@ -542,7 +594,9 @@ await pickupCounts(rid);return;
 if(b.dataset.delivery){
 const status=b.dataset.status;
 if(!confirm("Set this delivery status to "+status.replaceAll("_"," ")+"?"))return;
-b.disabled=true;await edge("eksa-delivery",{action:"update_status",order_id:b.dataset.delivery,status});
+const notes=status==="failed"?prompt("Reason for failed delivery (required)"):null;
+if(status==="failed"&&!notes?.trim())return;
+b.disabled=true;await edge("eksa-delivery",{action:"update_status",order_id:b.dataset.delivery,status,notes:notes?.trim()||null});
 await load();notify("Delivery status updated. Notification event queued if the customer has a phone number.","ok");return;
 }
 }catch(err){notify(err.message)}
