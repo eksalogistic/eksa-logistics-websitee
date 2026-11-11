@@ -494,6 +494,25 @@ async function loadCompanyDashboard(){
  orders=result.orders||[];
  renderCompanyOrders();
 }
+
+async function openCompanyRoutePanel(routeId){
+ const result=await edge("eksa-route-map",{action:"map",route_id:routeId});
+ const area=E("companyLiveRoute");if(!area)return;
+ const rows=result.orders||[];
+ area.innerHTML='<h3>Route #'+escape(routeId.slice(0,8).toUpperCase())+'</h3><p>'+rows.length+' of your company stops. View only; EKSA controls dispatch and stop order.</p>'+
+ '<div id="companyRouteCanvas" class="mapcanvas" style="height:250px"></div>'+
+ rows.map(o=>'<div class="stoprow"><div class="stopnum">'+escape(o.stop_sequence??"—")+'</div><div class="stopdetail"><b>'+escape(o.recipient_name)+'</b><small>'+escape(o.address_line1+", "+o.city)+'</small>'+pill(o.status)+'</div></div>').join("");
+ const coords=rows.filter(o=>o.latitude!==null&&o.longitude!==null&&Number.isFinite(Number(o.latitude))&&Number.isFinite(Number(o.longitude)));
+ if(!coords.length||!window.L){E("companyRouteCanvas").innerHTML='<div class="empty">Verified map coordinates are not yet available for these stops.</div>';return}
+ clearMap();map=L.map("companyRouteCanvas",{scrollWheelZoom:false});
+ L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:18,attribution:'&copy; OpenStreetMap contributors'}).addTo(map);
+ mapLayer=L.featureGroup().addTo(map);
+ coords.forEach(x=>{
+ const icon=L.divIcon({html:'<div class="badgepoint">'+escape(x.stop_sequence??"•")+'</div>',className:"",iconSize:[30,30],iconAnchor:[15,15]});
+ L.marker([Number(x.latitude),Number(x.longitude)],{icon}).bindPopup('<b>Stop '+escape(x.stop_sequence??"—")+'</b><p>'+escape(x.address_line1+", "+x.city)+'</p>').addTo(mapLayer);
+ });
+ map.fitBounds(mapLayer.getBounds().pad(.18));setTimeout(()=>map&&map.invalidateSize(),200);
+}
 function companyOrderStatus(o){
  if(o.label_status==="reprint_required")return '<span class="pill bad">Reprint required</span>';
  if(o.label_status==="printed")return '<span class="pill good">Printed</span>';
@@ -607,6 +626,13 @@ if(form.id==="driverScanForm"){
 if(form.id==="driverEarningsForm"){
  await refreshDriverEarnings(String(data.get("start")),String(data.get("end")));return;
 }
+if(form.id==="companyServiceCityForm"){
+ const cities=[...form.querySelectorAll('input[name="service_city"]:checked')].map(x=>x.value);
+ if(!confirm("Save approved EKSA delivery cities? Orders outside these cities will not be allowed into EKSA routes."))return;
+ const r=await edge("eksa-company-orders",{action:"save_service_cities",cities});
+ if(!r.success)throw Error(r.error||"Could not save approved cities");
+ await load();notify("EKSA service cities saved. City filters remain independent.","ok");return;
+}
 if(form.id==="bulkUploadForm"){await importFile(form);return;}
 if(form.id==="adminSingleOrder"){
  const payload={
@@ -697,6 +723,7 @@ return;
 }catch(err){notify(err.message)}finally{if(b)b.disabled=false}
 });
 E("view").addEventListener("change",async e=>{
+if(e.target.id==="companyOrderSearch"){companySearch=e.target.value;renderCompanyOrders();return;}
 if(e.target.id==="mapRoute"){selectedRoute=e.target.value;await showRoute(selectedRoute)}
 if(e.target.id==="scanRoute"&&e.target.value){try{await pickupCounts(e.target.value)}catch(err){notify(err.message)}}
 });
@@ -732,6 +759,23 @@ if(b.dataset.revokeIntegration){
  if(!confirm("Revoke this key? All imports using it will stop."))return;
  await edge("eksa-users",{action:"revoke_api_key",integration_id:b.dataset.revokeIntegration});
  await load();notify("Key revoked.","ok");return;
+}
+
+if(b.dataset.cityFilter!==undefined){
+ companySelectedCity=b.dataset.cityFilter;companyOrderFilter="all";renderCompanyOrders();return;
+}
+if(b.dataset.labelFilter!==undefined){
+ companyOrderFilter=b.dataset.labelFilter;renderCompanyOrders();return;
+}
+if(b.dataset.confirmLabel){
+ if(!confirm("Have you physically printed ALL bag labels for this order and checked the latest customer information? Confirm only after checking your printed labels."))return;
+ b.disabled=true;
+ const r=await edge("eksa-company-orders",{action:"confirm_printed",order_id:b.dataset.confirmLabel,revision:Number(b.dataset.revision)});
+ if(!r.success)throw Error(r.error||"Could not confirm print");
+ await load();notify("Physical labels confirmed for the latest order revision.","ok");return;
+}
+if(b.dataset.companyViewRoute){
+ await openCompanyRoutePanel(b.dataset.companyViewRoute);return;
 }
 if(b.dataset.companyEdit){await openCompanyOrderEdit(b.dataset.companyEdit);return;}
 if(b.dataset.activity){await openOrderActivity(b.dataset.activity);return;}
