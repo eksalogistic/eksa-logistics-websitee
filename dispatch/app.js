@@ -153,9 +153,69 @@ async function openAdminOrder(id){
  });
 }
 
+
+function bulkUploadCard(admin=false){
+ const clientSelect=admin?'<div><label>Company to import for</label><select name="client_id" required><option value="">Select company</option>'+clients.map(c=>'<option value="'+escape(c.id)+'">'+escape(c.name)+'</option>').join("")+'</select></div>':"";
+ return card("Bulk import · Excel / CSV",'<p>Upload up to 300 rows per file. Required columns: <strong>order_id, customer_name, address, city, postal_code, delivery_date</strong>. Optional: phone, bag_count, address_line2, delivery_instructions, sms_consent. SMS consent must be explicitly <strong>true</strong> only if the customer agreed to delivery text alerts.</p>'+
+ '<form id="bulkUploadForm"><div class="cols">'+clientSelect+'<div><label>Excel (.xlsx) or CSV file</label><input type="file" name="file" accept=".xlsx,.xls,.csv,text/csv" required></div></div><button type="submit">Validate & import orders</button></form><div id="bulkReport"></div>');
+}
+function parseCsv(text){
+ let rows=[],row=[],value="",quoted=false;
+ for(let i=0;i<text.length;i++){
+  const c=text[i];
+  if(quoted){if(c==='"'&&text[i+1]==='"'){value+='"';i++;}else if(c==='"')quoted=false;else value+=c;}
+  else if(c==='"')quoted=true;
+  else if(c===","){row.push(value);value="";}
+  else if(c==="\n"||c==="\r"){if(c==="\r"&&text[i+1]==="\n")i++;row.push(value);if(row.some(x=>x.trim()))rows.push(row);row=[];value="";}
+  else value+=c;
+ }
+ if(quoted)throw Error("CSV has an unclosed quoted field.");
+ row.push(value);if(row.some(x=>x.trim()))rows.push(row);
+ if(!rows.length)throw Error("The file is empty.");
+ const head=rows.shift().map(v=>v.replace(/^\uFEFF/,"").trim().toLowerCase().replace(/[\s-]+/g,"_"));
+ return rows.map(row=>Object.fromEntries(head.map((h,i)=>[h,(row[i]??"").trim()])));
+}
+async function rowsFromUpload(file){
+ if(file.size>2000000)throw Error("File exceeds 2 MB. Split into batches of 300 rows.");
+ if(/\.csv$/i.test(file.name))return parseCsv(await file.text());
+ if(!/\.xlsx?$/i.test(file.name))throw Error("Choose an Excel .xlsx or .csv file.");
+ if(!window.XLSX){
+  await new Promise((resolve,reject)=>{const t=document.createElement("script");t.src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js";t.onload=resolve;t.onerror=()=>reject(Error("Excel reader unavailable. Please save your spreadsheet as CSV and retry."));document.head.append(t)});
+ }
+ const workbook=window.XLSX.read(await file.arrayBuffer(),{type:"array",cellDates:false});
+ const sheet=workbook.Sheets[workbook.SheetNames[0]];
+ const items=window.XLSX.utils.sheet_to_json(sheet,{defval:"",raw:false});
+ return items.map(x=>Object.fromEntries(Object.entries(x).map(([k,v])=>[k.trim().toLowerCase().replace(/[\s-]+/g,"_"),String(v??"").trim()])));
+}
+function normalizeImportRow(r,i){
+ const get=(...aliases)=>{for(const a of aliases)if(r[a]!=null&&String(r[a]).trim())return String(r[a]).trim();return"";};
+ const dateValue=get("delivery_date","date","delivery_day");
+ const match=dateValue.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+ const yyyyDate=match?match[3]+"-"+match[1].padStart(2,"0")+"-"+match[2].padStart(2,"0"):dateValue;
+ const consent=get("sms_consent","customer_sms_consent","sms_opt_in").toLowerCase();
+ const count=Number(get("bag_count","bags","quantity")||1);
+ return {order_id:get("order_id","order_number","reference","id"),customer_name:get("customer_name","recipient_name","customer","name"),address:get("address","street_address","address_line1"),
+  address_line2:get("address_line2","unit","apartment","buzzer"),city:get("city"),postal_code:get("postal_code","postcode","zip"),
+  delivery_date:yyyyDate,phone:get("phone","customer_phone","recipient_phone"),delivery_instructions:get("delivery_instructions","instructions","delivery_notes"),
+  bag_count:count,sms_consent:["true","yes","1"].includes(consent)};
+}
+async function importFile(form){
+ const fd=new FormData(form),file=fd.get("file");
+ if(!(file instanceof File))throw Error("Choose an import file.");
+ const rows=await rowsFromUpload(file);
+ if(!rows.length||rows.length>300)throw Error("Import requires 1–300 data rows. Split larger files.");
+ const normalized=rows.map(normalizeImportRow);
+ const result=await edge("eksa-bulk-import",{client_id:role==="admin"?String(fd.get("client_id")):undefined,orders:normalized});
+ const text="Received "+result.received+" rows · Created "+result.created+" · Existing duplicates "+result.duplicates+" · Rejected "+result.rejected;
+ const errors=(result.errors||[]).slice(0,30).map(x=>"<li>Row "+escape(x.row)+": "+escape(x.order_id)+" — "+escape(x.reason)+"</li>").join("");
+ const report=E("bulkReport");
+ if(report)report.innerHTML="<p><strong>"+escape(text)+"</strong></p>"+(errors?"<ul>"+errors+"</ul>":"");
+ notify(text,result.rejected?"bad":"ok");
+}
+
 function renderAdminOrders(){
 const lookup=Object.fromEntries(clients.map(c=>[c.id,c.name]));
-setView(card("Company orders",'<p>Orders arrive automatically from each company. Print a unique barcode label for <strong>each physical bag</strong>; the assigned driver scans those labels at pickup. Use 4×6 thermal labels or regular A4/letter paper.</p>'+
+setView(bulkUploadCard(true)+card("Company orders",'<p>Orders arrive automatically from each company. Print a unique barcode label for <strong>each physical bag</strong>; the assigned driver scans those labels at pickup. Use 4×6 thermal labels or regular A4/letter paper.</p>'+
 '<div class="flex" style="margin:12px 0"><div class="field"><label>Label paper size</label><select id="labelSize"><option value="thermal">4×6 thermal</option><option value="letter">Letter</option><option value="a4">A4</option></select></div></div>'+
 table(["Order","Company","Customer / address","City","Stop","Status","Actions"],orders.map(x=>'<tr>'+cell(x.external_order_id)+cell(lookup[x.client_id]||"—")+cell(x.recipient_name+" · "+x.address_line1+" "+(x.postal_code||""))+cell(x.city)+cell(x.stop_sequence??"—")+'<td>'+pill(x.status)+'</td><td><div class="actions"><button class="minibtn" data-order-details="'+escape(x.id)+'">View / Edit</button><button class="minibtn" data-print-label="'+escape(x.id)+'">Labels</button></div></td></tr>'))));
 }
@@ -206,7 +266,7 @@ setView(card("Delivery stops",'<p>Update stop status after delivery. Status chan
 async function companyLoad(){
 orders=await rest("orders","select=id,external_order_id,recipient_name,address_line1,city,postal_code,status,stop_sequence,route_id,delivery_date,client_id&delivery_date=eq."+date()+"&order=stop_sequence.asc&limit=750");
 if(tab==="company"){setView(tiles([metric(orders.length,"Orders"),metric(orders.filter(x=>x.status==="delivered").length,"Delivered"),metric(orders.filter(x=>x.status==="out_for_delivery").length,"Out for delivery"),metric(orders.filter(x=>x.status==="failed").length,"Failed")])+card("Delivery visibility",'<p>Your company can see only its own orders, stop sequence, delivery statuses, and read-only map. Map changes are reserved for EKSA admin and assigned drivers.</p>'+table(["Order","Customer","City","Status"],orders.map(o=>'<tr>'+cell(o.external_order_id)+cell(o.recipient_name)+cell(o.city)+'<td>'+pill(o.status)+'</td></tr>'))));return}
-if(tab==="companyorders"){setView(card("Submit a new order",'<p>Orders submitted here appear in EKSA Admin automatically. Each bag gets its own barcode label.</p><form id="companyOrderForm"><div class="cols"><div><label>Order reference</label><input name="order_id" required maxlength="100" placeholder="Your order ID"></div><div><label>Delivery date</label><input type="date" name="delivery_date" value="'+date()+'" required></div><div><label>Customer name</label><input name="customer_name" required maxlength="200"></div><div><label>Phone (optional)</label><input type="tel" name="phone" maxlength="30"></div><div><label>Street address</label><input name="address" required maxlength="500"></div><div><label>City</label><input name="city" required maxlength="100"></div><div><label>Postal code</label><input name="postal_code" required maxlength="20"></div><div><label>Number of bags</label><input name="bag_count" type="number" value="1" min="1" max="20" required></div></div><button type="submit" style="margin-top:16px">Submit order</button></form>')+card("Company delivery orders",'<p>Your company can print bag barcode labels. EKSA and drivers use these to confirm pickup. The delivery map remains read-only.</p><div class="flex"><div class="field"><label>Label paper size</label><select id="labelSize"><option value="thermal">4×6 thermal</option><option value="letter">Letter</option><option value="a4">A4</option></select></div></div>'+table(["Order","Customer / address","Stop","Status","Bag labels"],orders.map(o=>'<tr>'+cell(o.external_order_id)+cell(o.recipient_name+" · "+o.address_line1+", "+o.city)+cell(o.stop_sequence??"—")+'<td>'+pill(o.status)+'</td><td><button class="minibtn" data-print-label="'+escape(o.id)+'">Print bag labels</button></td></tr>'))));return}
+if(tab==="companyorders"){setView(bulkUploadCard(false)+card("Submit a new order",'<p>Orders submitted here appear in EKSA Admin automatically. Each bag gets its own barcode label.</p><form id="companyOrderForm"><div class="cols"><div><label>Order reference</label><input name="order_id" required maxlength="100" placeholder="Your order ID"></div><div><label>Delivery date</label><input type="date" name="delivery_date" value="'+date()+'" required></div><div><label>Customer name</label><input name="customer_name" required maxlength="200"></div><div><label>Phone (optional)</label><input type="tel" name="phone" maxlength="30"></div><div><label>Street address</label><input name="address" required maxlength="500"></div><div><label>City</label><input name="city" required maxlength="100"></div><div><label>Postal code</label><input name="postal_code" required maxlength="20"></div><div><label>Number of bags</label><input name="bag_count" type="number" value="1" min="1" max="20" required></div></div><button type="submit" style="margin-top:16px">Submit order</button></form>')+card("Company delivery orders",'<p>Your company can print bag barcode labels. EKSA and drivers use these to confirm pickup. The delivery map remains read-only.</p><div class="flex"><div class="field"><label>Label paper size</label><select id="labelSize"><option value="thermal">4×6 thermal</option><option value="letter">Letter</option><option value="a4">A4</option></select></div></div>'+table(["Order","Customer / address","Stop","Status","Bag labels"],orders.map(o=>'<tr>'+cell(o.external_order_id)+cell(o.recipient_name+" · "+o.address_line1+", "+o.city)+cell(o.stop_sequence??"—")+'<td>'+pill(o.status)+'</td><td><button class="minibtn" data-print-label="'+escape(o.id)+'">Print bag labels</button></td></tr>'))));return}
 if(tab==="companymap"){selectRouteView("Company delivery map · Read only");return}
 if(tab==="invoices"){const invoices=await rest("invoices","select=invoice_number,period_start,period_end,total,currency,status,due_date&order=created_at.desc&limit=150");setView(card("Invoices",'<p>Only your company’s finalized and paid invoices appear here.</p>'+table(["Number","Period","Amount","Due","Status"],invoices.map(i=>'<tr>'+cell(i.invoice_number)+cell(i.period_start+" – "+i.period_end)+cell(cash(i.total,i.currency))+cell(i.due_date)+'<td>'+pill(i.status)+'</td></tr>'))));return}
 }
@@ -268,6 +328,7 @@ const form=e.target;if(!form?.id)return;e.preventDefault();
 const b=e.submitter;if(b)b.disabled=true;
 const data=new FormData(form);
 try{
+if(form.id==="bulkUploadForm"){await importFile(form);return;}
 if(form.id==="companyOrderForm"){
 const payload={
 order_id:String(data.get("order_id")).trim(),
