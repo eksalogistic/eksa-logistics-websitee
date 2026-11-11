@@ -13,3 +13,30 @@ main{width:100%;max-width:1700px;margin:0 auto;min-width:0;padding:34px 36px 55p
 @media(max-width:1130px){.shell{grid-template-columns:205px minmax(0,1fr)}main{padding:25px 22px}.cards{grid-template-columns:repeat(2,minmax(0,1fr))}.mapgrid{grid-template-columns:1fr}.stoplist{height:310px}}
 @media(max-width:720px){header{padding:8px 15px;gap:9px;height:70px}header img{width:120px;height:47px}.headtext{padding-left:10px;font-size:10px}.headtext span{font-size:9px}.top-identity{display:none}.shell{display:block;min-height:calc(100vh - 70px)}nav{width:100%;flex-direction:row;overflow-x:auto;overflow-y:hidden;padding:9px 12px;gap:5px;position:sticky;top:0;z-index:20;scrollbar-width:none}nav::-webkit-scrollbar{display:none}nav:before{display:none}nav button{white-space:nowrap;min-height:42px;padding:9px 12px;font-size:12px}nav .nav-icon svg{width:16px;height:16px}main{padding:19px 14px 90px}.pagetop{flex-wrap:wrap;gap:14px;margin-bottom:18px}.pagetop h1{font-size:25px}.card{padding:18px;border-radius:15px;margin-bottom:14px}.cards{gap:10px;margin-bottom:14px}.metric{min-height:102px;padding:18px 16px}.metric strong{font-size:27px}.metric:before{top:16px;bottom:16px}.controls{width:100%}.controls input{flex:1}.cols{grid-template-columns:1fr;gap:12px}.mapcanvas{height:335px}.stoplist{height:310px}.login{margin:7vh auto}.flex .field{min-width:140px}}
 @media(max-width:380px){header img{width:100px}.headtext{font-size:9px}.metric{padding:15px 12px}.metric span{font-size:11px}}
+
+/* Driver guided workflow */
+.driver-route-card,.driver-stop-card{border:1px solid #e2eaf7;border-radius:16px;background:#fff;padding:19px;margin:12px 0;box-shadow:0 3px 18px #1029530a}
+.driver-route-card h3,.driver-stop-card h3{font-size:17px;letter-spacing:-.3px;margin:0 0 5px}
+.driver-route-card p{margin:4px 0 14px;font-size:13px}
+.driver-ready-btn{width:100%;min-height:48px;font-size:14px}
+.driver-stop-card .actions{justify-content:flex-end}
+.driver-stop-card .actions>button{min-height:43px;flex:1}
+.pickup-stop{display:flex;align-items:center;gap:12px;border:1px solid #e1e9f4;padding:13px;border-radius:12px;margin:9px 0;background:#fff}
+.pickup-stop .stopdetail{flex:1}
+.pickup-stop small{font-size:12px;color:#7385a0;display:block;margin-top:4px}
+.driver-progress{width:100%;height:10px;border-radius:20px;background:#e8edf6;overflow:hidden;margin:16px 0}
+.driver-progress-fill{height:100%;background:linear-gradient(90deg,#15a857,#087e46);border-radius:20px;transition:width .2s ease}
+.link-button{display:inline-flex;align-items:center;justify-content:center;gap:8px;text-decoration:none!important;border:1px solid transparent;border-radius:11px;min-height:44px;background:#145cda;color:white!important;font-weight:800;padding:10px 15px}
+.link-button.mutedbtn{background:#eff4ff;border-color:#dbe5fb;color:#144ab7!important}
+#driverArrivalDialog .card{margin:12px 0;padding:16px;box-shadow:none;background:#f7f9fd}
+#driverArrivalDialog .actions{margin:15px 0}
+#driverArrivalDialog .actions>*{flex:1}
+#driverArrivalDialog input[type=file]{margin-bottom:12px}
+#driverArrivalDialog textarea{width:100%}
+@media(max-width:720px){
+.driver-route-card,.driver-stop-card{padding:16px}
+.driver-stop-card .actions{justify-content:stretch}
+#driverArrivalDialog{padding:17px!important}
+#driverArrivalDialog .actions{gap:8px}
+#driverArrivalDialog .actions>*{min-width:130px}
+}
