@@ -80,7 +80,7 @@ if(tab==="overview"||tab==="analytics"){stats=await edge("eksa-owner",{action:"m
 if(tab==="orders"){orders=await rest("orders","select=id,client_id,external_order_id,recipient_name,recipient_phone,address_line1,address_line2,delivery_instructions,city,postal_code,status,route_id,stop_sequence&delivery_date=eq."+date()+"&order=created_at.desc&limit=1000");renderAdminOrders();return}
 if(tab==="routes"){routes=await rest("routes","select=id,city_group,route_date,status,driver_id,sequence_version&route_date=eq."+date()+"&order=created_at.desc&limit=250");renderAdminRoutes();return}
 if(tab==="drivers"){routes=await rest("routes","select=id,driver_id,status&limit=1000");renderDrivers();return}
-if(tab==="companies"){renderCompanies();return}
+if(tab==="companies"){window.eksaIntegrations=(await edge("eksa-users",{action:"list_integrations"})).integrations||[];renderCompanies();return}
 if(tab==="notifications"){await renderNotifications();return}
 if(tab==="payouts"){await payoutLoad();return}
 }
@@ -263,6 +263,10 @@ card("Driver team",table(["Driver","Status","Capacity","Routes","Action"],driver
 function renderCompanies(){
 setView(card("Create company",'<form class="flex" id="createCompany"><div class="field"><label>Company name</label><input name="name" required></div><div class="field"><label>Short company code</label><input name="code" required maxlength="20"></div><div class="field"><label>Billing email</label><input name="billing" type="email"></div><button>Add company</button></form>')+
 card("Invite company staff",'<form class="flex" id="inviteCompany"><div class="field"><label>Company</label><select name="client" required><option value="">Select company</option>'+clients.map(c=>'<option value="'+escape(c.id)+'">'+escape(c.name)+'</option>').join("")+'</select></div><div class="field"><label>User email</label><input name="email" type="email" required></div><button>Send invitation</button></form><p>Each company can view only its own deliveries, orders, map, and finalized invoices.</p>')+
+card("Automatic company order integrations",'<p>Create separate, revocable API keys for each company. Each company must still configure its order software to push orders automatically to EKSA.</p>'+
+'<form id="integrationForm" class="flex"><div class="field"><label>Company</label><select name="client" required><option value="">Choose company</option>'+clients.map(c=>'<option value="'+escape(c.id)+'">'+escape(c.name)+'</option>').join("")+'</select></div><div class="field"><label>Integration name</label><input name="name" minlength="2" maxlength="80" placeholder="Nutribox order connection" required></div><button>Create API key</button></form><div id="integrationSecret"></div>'+
+table(["Company","Integration","Status","Action"],(window.eksaIntegrations||[]).map(i=>'<tr>'+cell(clients.find(c=>c.id===i.client_id)?.name||"Company")+cell(i.name)+'<td>'+pill(i.active?"active":"inactive")+'</td><td>'+(i.active?'<button class="minibtn mutedbtn" data-revoke-integration="'+escape(i.id)+'">Revoke</button>':"Revoked")+'</td></tr>'))+
+'<p>Endpoint: <code>https://suaghyqignjgqgwffzbt.supabase.co/functions/v1/eksa-partner-orders</code>. Send JSON via HTTPS POST with an <code>x-eksa-api-key</code> header. Store the key securely; it is displayed only once.</p>')+
 card("Companies",table(["Name","Code","Portal"],clients.map(c=>'<tr>'+cell(c.name)+cell(c.code)+'<td><a href="index.html">Company sign-in</a></td></tr>'))));
 }
 async function payoutLoad(){
@@ -461,6 +465,15 @@ if(form.id==="createCompany"){
 const r=await edge("eksa-users",{action:"create_company",name:String(data.get("name")).trim(),code:String(data.get("code")).trim(),billing_email:String(data.get("billing")).trim()||null});
 await load();notify("Company created in EKSA Dispatch.","ok");return;
 }
+if(form.id==="integrationForm"){
+ const client_id=String(data.get("client")||""),name=String(data.get("name")||"").trim();
+ if(!confirm("Create a secret integration key? It will be displayed only once."))return;
+ const r=await edge("eksa-users",{action:"issue_api_key",client_id,name});
+ await load();
+ const div=E("integrationSecret");
+ if(div)div.innerHTML='<section class="notice ok"><b>New API key — save securely now</b><p>Do not share it in screenshots.</p><input id="issuedKey" readonly value="'+escape(r.api_key)+'"><button class="mutedbtn" data-copy-issued-key type="button">Copy key</button></section>';
+ notify("Integration key created. Save it securely.","ok");return;
+}
 if(form.id==="inviteCompany"){
 const mail=String(data.get("email")).trim().toLowerCase();
 await edge("eksa-users",{action:"invite_client",email:mail,client_id:String(data.get("client"))});
@@ -495,6 +508,12 @@ if(e.target.id==="scanRoute"&&e.target.value){try{await pickupCounts(e.target.va
 E("view").addEventListener("click",async e=>{
 const b=e.target.closest("button");if(!b)return;
 try{
+if(b.dataset.copyIssuedKey!==undefined){const v=E("issuedKey")?.value;if(v){await navigator.clipboard.writeText(v);notify("Key copied.","ok")}return;}
+if(b.dataset.revokeIntegration){
+ if(!confirm("Revoke this key? All imports using it will stop."))return;
+ await edge("eksa-users",{action:"revoke_api_key",integration_id:b.dataset.revokeIntegration});
+ await load();notify("Key revoked.","ok");return;
+}
 if(b.dataset.activity){await openOrderActivity(b.dataset.activity);return;}
 if(b.dataset.optPreview){
 const result=await edge("eksa-optimize",{action:"preview",route_id:b.dataset.optPreview});
