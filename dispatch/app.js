@@ -118,7 +118,7 @@ try{
 const response=await fetch(BASE+"/functions/v1/eksa-labels-view",{
 method:"POST",
 headers:{"apikey":KEY,"Authorization":"Bearer "+token,"Content-Type":"application/json"},
-body:JSON.stringify({tracking_id:orderId,format})
+body:JSON.stringify(Array.isArray(orderId)?{tracking_ids:orderId,format}:{tracking_id:orderId,format})
 });
 if(!response.ok){
 const err=await response.json().catch(()=>({}));
@@ -129,7 +129,8 @@ if(!html.startsWith("<!doctype html")&&!html.startsWith("<!DOCTYPE html"))throw 
 tab.document.open();tab.document.write(html);tab.document.close();
 tab.focus();
 notify("Barcode labels opened in a new tab. Choose Print or Save as PDF in your browser.","ok");
-}catch(error){tab.document.body.textContent="Could not generate labels: "+error.message;notify(error.message)}
+return true;
+}catch(error){tab.document.body.textContent="Could not generate labels: "+error.message;notify(error.message);return false}
 }
 
 
@@ -527,6 +528,7 @@ const counts={total:selected.length,delivered:selected.filter(x=>x.status==="del
 const metricButton=(value,label,filter,color)=>'<button type="button" class="company-metric '+(companyOrderFilter===filter?"active":"")+'" data-label-filter="'+escape(filter)+'"><strong>'+escape(value)+'</strong><span>'+escape(label)+'</span></button>';
 const cityNames=[...new Set([...(d.available_cities||[]),...all.map(o=>o.city)])];
 const cityButton=city=>'<button type="button" class="company-city-btn '+(companySelectedCity===city?"active":"")+'" data-city-filter="'+escape(city)+'">'+escape(city==="all"?"All GTA":city)+' <strong>'+escape(city==="all"?all.length:all.filter(o=>o.city.trim().toLowerCase()===city.toLowerCase()).length)+'</strong></button>';
+const batchCandidates=selected.filter(o=>o.label_status!=="printed").filter(o=>!companySearch||[o.external_order_id,o.recipient_name,o.address_line1,o.city].join(" ").toLowerCase().includes(companySearch.toLowerCase()));
 const rows=filtered.map(o=>'<tr class="'+(o.label_status!=="printed"?"label-attention":"")+'">'+cell(o.external_order_id)+cell(o.recipient_name)+cell(o.address_line1+", "+(o.address_line2||"")+", "+o.city)+cell(o.bag_count)+cell(o.stop_sequence??"—")+'<td>'+companyOrderStatus(o)+'</td><td>'+pill(o.status)+'</td><td>'+(o.status==="out_for_delivery"?'<span class="pill good">On Route</span> · ':"")+escape(o.sms_status==="pending"?"Queued":o.sms_status==="processing"?"Processing":o.sms_status==="submitted"?"Submitted to provider":o.sms_status==="sent"?"Sent":o.sms_status==="delivered"?"Delivered to phone":o.sms_status==="failed"?"SMS failed":o.sms_status==="cancelled"?"SMS cancelled":"Not sent")+'</td><td><div class="actions"><button class="minibtn" data-print-label="'+escape(o.id)+'">Print</button>'+(o.label_status==="printed"?'':'<button class="minibtn mutedbtn" data-confirm-label="'+escape(o.id)+'" data-revision="'+escape(o.label_revision)+'">Confirm printed</button>')+'<button class="minibtn mutedbtn" data-company-edit="'+escape(o.id)+'">Edit</button><button class="minibtn mutedbtn" data-activity="'+escape(o.id)+'">History / POD</button></div></td></tr>');
 const companyRoutes=(d.routes||[]).filter(r=>companySelectedCity==="all"||r.city_group.trim().toLowerCase()===companySelectedCity.toLowerCase());
 const routeCards=companyRoutes.map(r=>{
