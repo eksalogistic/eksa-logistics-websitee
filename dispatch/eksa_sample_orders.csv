@@ -1,0 +1,3 @@
+order_id,customer_name,phone,address,address_line2,city,postal_code,delivery_date,bag_count,delivery_instructions,sms_consent
+SAMPLE-001,Sample Customer One,4165550101,123 Example Street,Unit 101 - Buzzer 200,Brampton,L6Y 1A1,2026-11-20,2,Please call on arrival,false
+SAMPLE-002,Sample Customer Two,4165550102,456 Example Avenue,Front entrance,Mississauga,L5B 1M1,2026-11-20,1,Leave with concierge if authorized,false
