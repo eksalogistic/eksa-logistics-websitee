@@ -335,7 +335,7 @@ alert("Let's rock and roll! 🚚\n\nAll bags are scanned.\nDrive safe, buckle up
 }
 }
 function driverNavUrl(o){
-const destination=[o.address_line1,o.address_line2,o.city,o.postal_code,"Canada"].filter(Boolean).join(", ");
+const destination=[o.address_line1,o.city,o.postal_code,"Canada"].filter(Boolean).join(", ");
 return "https://www.google.com/maps/dir/?api=1&destination="+encodeURIComponent(destination);
 }
 async function renderDriverStops(){
@@ -492,6 +492,16 @@ const form=e.target;if(!form?.id)return;e.preventDefault();
 const b=e.submitter;if(b)b.disabled=true;
 const data=new FormData(form);
 try{
+if(form.id==="driverScanForm"){
+ const barcode=String(data.get("barcode")||"").trim();
+ const r=await edge("eksa-scan",{barcode});
+ form.reset();form.querySelector("input")?.focus();
+ await refreshDriverPickup();
+ notify("Scanned bag "+r.bag_number+" · "+r.route_scanned_bags+" of "+r.route_total_bags+" bags confirmed.","ok");return;
+}
+if(form.id==="driverEarningsForm"){
+ await refreshDriverEarnings(String(data.get("start")),String(data.get("end")));return;
+}
 if(form.id==="bulkUploadForm"){await importFile(form);return;}
 if(form.id==="adminSingleOrder"){
  const payload={
@@ -588,6 +598,30 @@ if(e.target.id==="scanRoute"&&e.target.value){try{await pickupCounts(e.target.va
 E("view").addEventListener("click",async e=>{
 const b=e.target.closest("button");if(!b)return;
 try{
+if(b.dataset.driverReady){
+ driverSelectedRoute=b.dataset.driverReady;
+ await renderDriverReady();return;
+}
+if(b.dataset.driverBack!==undefined){driverSelectedRoute=null;renderDriverHome();return;}
+if(b.dataset.driverDepart){
+ if(!confirm("All bags scanned. Ready to depart? Drive safe and handle every meal with care."))return;
+ b.disabled=true;
+ const r=await edge("eksa-route-start",{action:"start_route",route_id:b.dataset.driverDepart});
+ driverCelebrate.add(driverSelectedRoute);
+ await driverCommon();await renderDriverStops();
+ notify("Let's rock and roll! Route started. Stay safe and follow the stops in order.","ok");return;
+}
+if(b.dataset.driverGo){
+ const o=orders.find(x=>x.id===b.dataset.driverGo);
+ if(!o)throw Error("Stop not found");
+ window.open(driverNavUrl(o),"_blank","noopener");return;
+}
+if(b.dataset.driverReached){
+ const o=orders.find(x=>x.id===b.dataset.driverReached);
+ if(!o)throw Error("Stop not found");
+ await edge("eksa-delivery",{action:"mark_reached",order_id:o.id});
+ await openDriverArrival(o.id,true);return;
+}
 if(b.dataset.copyIssuedKey!==undefined){const v=E("issuedKey")?.value;if(v){await navigator.clipboard.writeText(v);notify("Key copied.","ok")}return;}
 if(b.dataset.revokeIntegration){
  if(!confirm("Revoke this key? All imports using it will stop."))return;
