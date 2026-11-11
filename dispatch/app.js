@@ -6,7 +6,7 @@ let token=null,role=null,profile=null,tab=null,driver=null,drivers=[],clients=[]
 const escape=x=>String(x??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const date=()=>E("date").value;
 const cash=(n,c="CAD")=>new Intl.NumberFormat("en-CA",{style:"currency",currency:c}).format(Number(n||0));
-const pill=(v)=>'<span class="pill">'+escape(v)+'</span>';
+const pill=(v)=>{const x=String(v??"").toLowerCase();const cls=["delivered","completed","ready","active","paid","sent"].includes(x)?" good":["failed","cancelled","inactive","rejected"].includes(x)?" bad":["pending","loading","out_for_delivery","assigned","processing"].includes(x)?" warn":"";return '<span class="pill'+cls+'">'+escape(String(v??"").replaceAll("_"," "))+'</span>'};
 const cell=v=>'<td>'+escape(v)+'</td>';
 const card=(title,body)=>'<section class="card"><h2>'+escape(title)+'</h2>'+body+'</section>';
 const metric=(v,title)=>'<div class="card metric"><strong>'+escape(v)+'</strong><span>'+escape(title)+'</span></div>';
@@ -27,7 +27,30 @@ if(role==="admin")return [["overview","Overview"],["orders","Orders"],["routes",
 if(role==="driver")return [["today","My routes"],["map","Map & sequence"],["scan","Pickup scanning"],["deliveries","Deliveries"]];
 return [["company","Overview"],["companyorders","Orders"],["companymap","Delivery map"],["invoices","Invoices"]];
 }
-function drawTabs(){E("tabs").innerHTML=tabList().map(([id,title])=>'<button data-tab="'+id+'" class="'+(tab===id?"selected":"")+'">'+escape(title)+'</button>').join("");E("roleLabel").textContent=role==="admin"?"OWNER":role==="driver"?"DRIVER":"COMPANY";}
+
+const ICONS={
+overview:'<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',
+orders:'<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 7h6M9 12h6M9 17h4"/>',
+routes:'<path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3zM9 3v15m6-12v15"/>',
+drivers:'<circle cx="12" cy="8" r="4"/><path d="M4 21v-2a8 8 0 0 1 16 0v2"/>',
+analytics:'<path d="M4 20V12m5 8V7m5 13v-9m5 9V4"/>',
+payouts:'<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><circle cx="12" cy="15" r="2"/>',
+companies:'<path d="M3 21V7l9-4 9 4v14zM8 11h1m6 0h1M8 15h1m6 0h1M10 21v-4h4v4"/>',
+notifications:'<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/>',
+today:'<path d="M3 9h18M7 9V5h10v4M4 9v11h16V9M9 14h6"/>',
+map:'<path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3zM9 3v15m6-12v15"/>',
+scan:'<path d="M4 9V5h5m6 0h5v4M4 15v4h5m6 0h5v-4M8 12h8"/>',
+deliveries:'<path d="M3 7h11v10H3zM14 11h4l3 3v3h-7M7 20a2 2 0 1 0 0-4 2 2 0 0 0 0 4M18 20a2 2 0 1 0 0-4 2 2 0 0 0 0 4"/>',
+company:'<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 12h10M12 7v10"/>',
+companyorders:'<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6m-6 4h6m-6 4h4"/>',
+companymap:'<path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3zM9 3v15m6-12v15"/>',
+invoices:'<path d="M5 3h14v18l-3-2-4 2-4-2-3 2zM9 8h6M9 12h6"/>'
+};
+function drawTabs(){
+E("tabs").innerHTML=tabList().map(([id,title])=>'<button data-tab="'+id+'" class="'+(tab===id?"selected":"")+'" aria-current="'+(tab===id?"page":"false")+'"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24">'+(ICONS[id]||ICONS.overview)+'</svg></span>'+escape(title)+'</button>').join("");
+E("roleLabel").textContent=role==="admin"?"EKSA OPERATIONS":role==="driver"?"DRIVER PORTAL":"COMPANY PORTAL";
+}
+
 async function initialize(){
 const p=await rest("profiles","select=role,client_id,full_name&user_id=eq."+encodeURIComponent(profile.id));
 if(!Array.isArray(p)||!p.length||!["admin","driver","client"].includes(p[0].role))throw Error("Your EKSA user role is not configured");
@@ -45,7 +68,7 @@ E("refresh").addEventListener("click",()=>load().catch(err=>notify(err.message))
 E("date").addEventListener("change",()=>{selectedRoute=null;routeData=null;load().catch(err=>notify(err.message))});
 E("date").value=dayDefault();
 async function load(){
-clearNotice();E("pageTitle").textContent=tabList().find(x=>x[0]===tab)?.[1]||"Dispatch";E("view").innerHTML='<div class="card">Loading EKSA Dispatch…</div>';clearMap();
+clearNotice();E("pageTitle").textContent=tabList().find(x=>x[0]===tab)?.[1]||"Dispatch";E("pageSub").textContent=role==="admin"?"Your command centre for every delivery":role==="driver"?"Your assigned deliveries and pickup progress":"Manage and monitor your meal-prep deliveries";E("view").innerHTML='<div class="card">Loading EKSA Dispatch…</div>';clearMap();
 if(role==="admin")await adminLoad();else if(role==="driver")await driverLoad();else await companyLoad();
 }
 async function adminCommon(){
@@ -250,7 +273,7 @@ orders=await rest("orders","select=id,external_order_id,recipient_name,recipient
 async function driverLoad(){
 await driverCommon();const activeIds=new Set(routes.map(r=>r.id));orders=orders.filter(o=>activeIds.has(o.route_id));
 if(tab==="today"){setView(tiles([metric(routes.length,"Assigned routes"),metric(orders.length,"Stops"),metric(orders.filter(o=>o.status==="delivered").length,"Delivered"),metric(orders.filter(o=>o.status==="failed").length,"Failed")])+
-card("My assigned routes",'<p><strong>Start Route</strong> only becomes available after all assigned bags are scanned. It marks the route out for delivery and queues eligible customer notifications (sending awaits SMS provider setup).</p>'+table(["City","Date","Status","Action"],routes.map(r=>'<tr>'+cell(r.city_group)+cell(r.route_date)+'<td>'+pill(r.status)+'</td><td><div class="actions"><button class="minibtn" data-map="'+escape(r.id)+'">Open map</button>'+(["assigned","loading","ready"].includes(r.status)?'<button class="minibtn" data-start-route="'+escape(r.id)+'">Start route</button>':"")+'</div></td></tr>')))+'<div id="routeMapArea"></div>');return}
+card("My assigned routes",'<p><strong>Start Route</strong> only becomes available after all assigned bags are scanned. It marks the route out for delivery and queues eligible customer notifications (sending awaits SMS provider setup).</p>'+table(["City","Date","Status","Action"],routes.map(r=>'<tr>'+cell(r.city_group)+cell(r.route_date)+'<td>'+pill(r.status)+'</td><td><div class="actions"><button class="minibtn" data-map="'+escape(r.id)+'">Open map</button>'+(["assigned","loading","ready"].includes(r.status)?'<button class="minibtn successbtn" data-start-route="'+escape(r.id)+'">▶ Start route</button>':"")+'</div></td></tr>')))+'<div id="routeMapArea"></div>');return}
 if(tab==="map"){selectRouteView("Driver map & delivery sequence");return}
 if(tab==="scan"){renderScan();return}
 if(tab==="deliveries"){renderDeliveries();return}
