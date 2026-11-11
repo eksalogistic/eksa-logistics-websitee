@@ -179,7 +179,7 @@ async function openAdminOrder(id){
 
 function bulkUploadCard(admin=false){
  const clientSelect=admin?'<div><label>Company to import for</label><select name="client_id" required><option value="">Select company</option>'+clients.map(c=>'<option value="'+escape(c.id)+'">'+escape(c.name)+'</option>').join("")+'</select></div>':"";
- return card("Bulk import · Excel / CSV",'<p>Upload up to 300 rows per file. Required columns: <strong>order_id, customer_name, address, city, postal_code, delivery_date</strong>. Optional: phone, bag_count, address_line2, delivery_instructions, sms_consent. SMS consent must be explicitly <strong>true</strong> only if the customer agreed to delivery text alerts.</p>'+
+ return card("Bulk import · Excel / CSV",'<a class="mutedbtn" href="eksa_sample_orders.csv" download="EKSA_Sample_Orders.csv" style="display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:10px;font-weight:800;text-decoration:none;margin-bottom:14px">↓ Download editable sample CSV</a><p>Upload up to 300 rows per file. Required columns: <strong>order_id, customer_name, address, city, postal_code, delivery_date</strong>. Optional: phone, bag_count, address_line2, delivery_instructions, sms_consent. SMS consent must be explicitly <strong>true</strong> only if the customer agreed to delivery text alerts.</p>'+
  '<form id="bulkUploadForm"><div class="cols">'+clientSelect+'<div><label>Excel (.xlsx) or CSV file</label><input type="file" name="file" accept=".xlsx,.xls,.csv,text/csv" required></div></div><button type="submit">Validate & import orders</button></form><div id="bulkReport"></div>');
 }
 function parseCsv(text){
@@ -238,7 +238,7 @@ async function importFile(form){
 
 function renderAdminOrders(){
 const lookup=Object.fromEntries(clients.map(c=>[c.id,c.name]));
-setView(bulkUploadCard(true)+card("Company orders",'<p>Orders arrive automatically from each company. Print a unique barcode label for <strong>each physical bag</strong>; the assigned driver scans those labels at pickup. Use 4×6 thermal labels or regular A4/letter paper.</p>'+
+setView(bulkUploadCard(true)+card("Add one customer order",'<form id="adminSingleOrder"><div class="cols"><div><label>Company</label><select name="client_id" required><option value="">Choose company</option>'+clients.map(c=>'<option value="'+escape(c.id)+'">'+escape(c.name)+'</option>').join("")+'</select></div><div><label>Order ID</label><input name="order_id" required></div><div><label>Customer name</label><input name="customer_name" required></div><div><label>Customer phone</label><input name="phone" type="tel"></div><div><label>Street address</label><input name="address" required></div><div><label>Unit / buzzer</label><input name="address_line2"></div><div><label>City</label><input name="city" required></div><div><label>Postal code</label><input name="postal_code" required></div><div><label>Delivery date</label><input name="delivery_date" type="date" value="'+date()+'" required></div><div><label>Bags</label><input name="bag_count" type="number" min="1" max="20" value="1" required></div><div><label>Delivery instructions</label><textarea name="delivery_instructions" maxlength="1000"></textarea></div></div><label style="display:flex;align-items:center;gap:9px"><input type="checkbox" name="sms_consent" style="width:auto">Customer explicitly consented to delivery text messages</label><button type="submit">Add order</button></form>')+card("Company orders",'<p>Orders arrive automatically from each company. Print a unique barcode label for <strong>each physical bag</strong>; the assigned driver scans those labels at pickup. Use 4×6 thermal labels or regular A4/letter paper.</p>'+
 '<div class="flex" style="margin:12px 0"><div class="field"><label>Label paper size</label><select id="labelSize"><option value="thermal">4×6 thermal</option><option value="letter">Letter</option><option value="a4">A4</option></select></div></div>'+
 table(["Order","Company","Customer / address","City","Stop","Status","Actions"],orders.map(x=>'<tr>'+cell(x.external_order_id)+cell(lookup[x.client_id]||"—")+cell(x.recipient_name+" · "+x.address_line1+" "+(x.postal_code||""))+cell(x.city)+cell(x.stop_sequence??"—")+'<td>'+pill(x.status)+'</td><td><div class="actions"><button class="minibtn" data-order-details="'+escape(x.id)+'">View / Edit</button><button class="minibtn" data-print-label="'+escape(x.id)+'">Labels</button></div></td></tr>'))));
 }
@@ -352,6 +352,26 @@ const b=e.submitter;if(b)b.disabled=true;
 const data=new FormData(form);
 try{
 if(form.id==="bulkUploadForm"){await importFile(form);return;}
+if(form.id==="adminSingleOrder"){
+ const payload={
+ client_id:String(data.get("client_id")),
+ orders:[{
+ order_id:String(data.get("order_id")||"").trim(),
+ customer_name:String(data.get("customer_name")||"").trim(),
+ phone:String(data.get("phone")||"").trim(),
+ address:String(data.get("address")||"").trim(),
+ address_line2:String(data.get("address_line2")||"").trim(),
+ city:String(data.get("city")||"").trim(),
+ postal_code:String(data.get("postal_code")||"").trim(),
+ delivery_date:String(data.get("delivery_date")||"").trim(),
+ bag_count:Number(data.get("bag_count")||1),
+ delivery_instructions:String(data.get("delivery_instructions")||"").trim(),
+ sms_consent:data.get("sms_consent")!==null
+ }]};
+ const r=await edge("eksa-bulk-import",payload);
+ if(r.rejected)throw Error(r.errors?.[0]?.reason||"Order was rejected");
+ await load();notify(r.duplicates?"Order reference already exists.":"Customer order added with bag barcodes.","ok");return;
+}
 if(form.id==="companyOrderForm"){
 const payload={
 order_id:String(data.get("order_id")).trim(),
