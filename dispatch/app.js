@@ -24,7 +24,7 @@ const rest=(table,params)=>request("/rest/v1/"+table+"?"+params);
 const dayDefault=()=>{const fmt=new Intl.DateTimeFormat("en-CA",{timeZone:"America/Toronto",year:"numeric",month:"2-digit",day:"2-digit"});const ps=fmt.formatToParts(new Date());const parts=Object.fromEntries(ps.map(p=>[p.type,p.value]));return parts.year+"-"+parts.month+"-"+parts.day};
 function tabList(){
 if(role==="admin")return [["overview","Overview"],["orders","Orders"],["routes","Routes & Map"],["drivers","Drivers"],["analytics","Analytics"],["payouts","Payouts"],["companies","Companies"],["notifications","Notifications"]];
-if(role==="driver")return [["today","My routes"],["map","Map & sequence"],["scan","Pickup scanning"],["deliveries","Deliveries"]];
+if(role==="driver")return [["today","My routes"],["map","Stops & navigation"],["earnings","My earnings"]];
 return [["company","Overview"],["companyorders","Orders"],["companymap","Delivery map"],["invoices","Invoices"]];
 }
 
@@ -276,76 +276,156 @@ setView(card("Driver pay rates",'<form class="flex" id="rateForm"><div class="fi
 card("Prepare payout",'<form id="payoutForm" class="flex"><div class="field"><label>Driver</label><select name="driver" required><option value="">Select driver</option>'+drivers.map(d=>'<option value="'+escape(d.id)+'">'+escape(d.display_name)+'</option>').join("")+'</select></div><div class="field"><label>Start date</label><input name="start" type="date" value="'+date()+'" required></div><div class="field"><label>End date</label><input name="end" type="date" value="'+date()+'" required></div><button name="action" value="payout_preview" type="submit">Preview</button><button name="action" value="payout_create" type="submit">Create draft</button></form><p id="preview" class="subtle">Only delivered orders count toward payout. Duplicates are blocked.</p>')+
 card("Payout history",table(["Driver","Period","Total","Status","Actions"],(payouts.payouts||[]).map(x=>'<tr>'+cell(names[x.driver_id]||"—")+cell(x.period_start+" – "+x.period_end)+cell(cash(x.total,x.currency))+'<td>'+pill(x.status)+'</td><td class="actions">'+(x.status==="draft"?'<button class="minibtn" data-payout="'+escape(x.id)+'" data-action="payout_approve">Approve</button>':'')+(x.status==="approved"?'<button class="minibtn" data-payout="'+escape(x.id)+'" data-action="payout_mark_paid">Mark paid</button>':'')+'</td></tr>'))));
 }
+
+let driverSelectedRoute=null,driverActiveStop=null,driverArrivalReady=false,driverPODReady=false;
+const driverCelebrate=new Set();
 async function driverCommon(){
 routes=await rest("routes","select=id,route_date,city_group,status,driver_id,sequence_version&route_date=eq."+date()+"&order=created_at.desc&limit=250");
 orders=await rest("orders","select=id,external_order_id,recipient_name,recipient_phone,address_line1,address_line2,delivery_instructions,city,postal_code,status,stop_sequence,route_id&delivery_date=eq."+date()+"&order=stop_sequence.asc&limit=750");
+const activeIds=new Set(routes.map(r=>r.id));orders=orders.filter(o=>activeIds.has(o.route_id));
 }
+function driverRouteTitle(r){return String(r.city_group||"Delivery route")+" · #"+r.id.slice(0,8).toUpperCase()}
 async function driverLoad(){
-await driverCommon();const activeIds=new Set(routes.map(r=>r.id));orders=orders.filter(o=>activeIds.has(o.route_id));
-if(tab==="today"){setView(tiles([metric(routes.length,"Assigned routes"),metric(orders.length,"Stops"),metric(orders.filter(o=>o.status==="delivered").length,"Delivered"),metric(orders.filter(o=>o.status==="failed").length,"Failed")])+
-card("My assigned routes",'<p><strong>Start Route</strong> only becomes available after all assigned bags are scanned. It marks the route out for delivery and queues eligible customer notifications (sending awaits SMS provider setup).</p>'+table(["City","Date","Status","Action"],routes.map(r=>'<tr>'+cell(r.city_group)+cell(r.route_date)+'<td>'+pill(r.status)+'</td><td><div class="actions"><button class="minibtn" data-map="'+escape(r.id)+'">Open map</button>'+(["assigned","loading","ready"].includes(r.status)?'<button class="minibtn successbtn" data-start-route="'+escape(r.id)+'">▶ Start route</button>':"")+'</div></td></tr>')))+'<div id="routeMapArea"></div>');return}
-if(tab==="map"){selectRouteView("Driver map & delivery sequence");return}
+await driverCommon();
+if(tab==="earnings"){await renderDriverEarnings();return}
 if(tab==="scan"){renderScan();return}
-if(tab==="deliveries"){renderDeliveries();return}
+if(tab==="deliveries"){renderDriverStops();return}
+if(tab==="map"){
+if(driverSelectedRoute){await renderDriverStops();return}
+if(!routes.length){setView(card("No assigned route","<p>When EKSA assigns your route, it will appear here automatically.</p>"));return;}
+driverSelectedRoute=routes[0].id;await renderDriverStops();return
 }
-function renderScan(){
-const list=routes.map(r=>'<option value="'+escape(r.id)+'">'+escape(r.city_group+" · "+r.route_date)+'</option>').join("");
-setView(card("Pickup scanning",'<p>Admin already has the order information. Scan each physical bag at pickup to confirm it is on your vehicle.</p><form id="scan" class="flex"><div class="field"><label>Enter or scan barcode</label><input name="barcode" placeholder="Scan barcode or paste ID" required autofocus></div><button>Record scan</button></form><div id="scanResult" class="subtle"></div><p>For camera scanning, use the EKSA Dispatch mobile app. The web form also works with USB/Bluetooth barcode scanners.</p>')+
-card("Bag counts by route",'<div class="flex"><div class="field"><label>Assigned route</label><select id="scanRoute"><option value="">Select route</option>'+list+'</select></div><button class="mutedbtn" data-checkpickup>Update counts</button></div><div id="scanCounts" style="margin-top:15px"></div>'));
+if(tab==="today"){
+if(driverSelectedRoute&&routes.some(r=>r.id===driverSelectedRoute)){await renderDriverReady();return;}
+driverSelectedRoute=null;renderDriverHome();return;
 }
-
-async function openOrderActivity(orderId){
-document.getElementById("eksaActivityDialog")?.remove();
-const [notes,pods]=await Promise.all([
- edge("eksa-comments",{action:"list",order_id:orderId}),
- edge("eksa-delivery",{action:"list_pod",order_id:orderId})
+}
+function renderDriverHome(){
+const total=orders.length,done=orders.filter(o=>o.status==="delivered").length;
+setView(tiles([metric(routes.length,"Routes assigned"),metric(total,"Stops today"),metric(done,"Delivered"),metric(total-done-orders.filter(o=>["failed","cancelled"].includes(o.status)).length,"Remaining")])+
+card("Your assigned routes",'<p>Tap a route to see its bags and delivery count. Confirm you are ready to begin pickup scanning.</p>'+
+routes.map(r=>{const os=orders.filter(o=>o.route_id===r.id);
+return '<div class="driver-route-card"><div class="flex" style="justify-content:space-between;align-items:center"><div><h3>'+escape(driverRouteTitle(r))+'</h3><p>'+escape(r.route_date)+' · '+os.length+' stops</p></div>'+pill(r.status)+'</div><button data-driver-ready="'+escape(r.id)+'" class="driver-ready-btn">'+(["out_for_delivery","completed"].includes(r.status)?"Open route":"Ready · Open route")+'</button></div>'}).join("")+(routes.length?"":'<div class="empty">No routes assigned for this date. You can choose another date above or tap Refresh.</div>')));
+}
+async function renderDriverReady(){
+const rid=driverSelectedRoute,r=routes.find(x=>x.id===rid);
+if(!r){driverSelectedRoute=null;renderDriverHome();return;}
+if(["out_for_delivery","completed"].includes(r.status)){await renderDriverStops();return;}
+setView(card("Pickup · "+driverRouteTitle(r),'<p>Confirm every physical meal bag before departure. The stop sequence becomes available as the assigned bags are scanned.</p><div id="driverPickupProgress"><div class="empty">Loading bag counts…</div></div>'+
+'<form id="driverScanForm" class="flex" style="margin-top:18px"><div class="field"><label>Scan bag barcode</label><input name="barcode" autocomplete="off" placeholder="Scan using barcode scanner or enter barcode" required autofocus></div><button>Record scan</button></form><p class="subtle">The native mobile app supports camera scanning. This web screen also accepts Bluetooth or USB barcode scanners.</p>'+
+'<div class="actions"><button class="mutedbtn" data-driver-back>Back to routes</button><button class="successbtn" id="driverDepart" data-driver-depart="'+escape(rid)+'" disabled>Start route</button></div>'));
+await refreshDriverPickup();
+}
+async function refreshDriverPickup(){
+const rid=driverSelectedRoute;if(!rid||!E("driverPickupProgress"))return;
+const result=await edge("eksa-pickup-status",{route_id:rid});
+const summary=result.summary||{},complete=summary.total_bags>0&&summary.scanned_bags===summary.total_bags;
+const readyButton=E("driverDepart");if(readyButton)readyButton.disabled=!complete;
+const rows=(result.orders||[]).map((o,i)=>{
+const done=o.pickup_complete;return '<div class="pickup-stop"><div class="stopnum">'+escape(o.stop_sequence??i+1)+'</div><div class="stopdetail"><strong>'+escape(o.recipient_name)+'</strong><small>'+escape(o.scanned_bags)+' of '+escape(o.total_bags)+' bags scanned · '+escape(o.external_order_id)+'</small></div>'+pill(done?"ready":"pending")+'</div>'
+}).join("");
+E("driverPickupProgress").innerHTML=tiles([metric(summary.total_bags||0,"Expected bags"),metric(summary.scanned_bags||0,"Scanned"),metric(Math.max(0,(summary.total_bags||0)-(summary.scanned_bags||0)),"Remaining")])+
+'<div class="driver-progress"><div class="driver-progress-fill" style="width:'+Math.round((summary.scanned_bags||0)/Math.max(1,summary.total_bags||0)*100)+'%"></div></div>'+
+'<p style="font-weight:800;color:#194989">'+escape(summary.scanned_bags||0)+' of '+escape(summary.total_bags||0)+' scanned</p>'+
+'<h3>Stops activating as bags are scanned</h3>'+rows+
+(complete?'<div class="notice ok">All bags checked. Your route is ready! Tap Start Route below.</div>':'<p class="subtle">Sequence is available for navigation after all bags are accounted for.</p>');
+if(complete&&!driverCelebrate.has(rid)){
+driverCelebrate.add(rid);
+alert("Let's rock and roll! 🚚\n\nAll bags are scanned.\nDrive safe, buckle up and handle every meal with care.\n\nTap Start Route when you are ready to depart.");
+}
+}
+function driverNavUrl(o){
+const destination=[o.address_line1,o.address_line2,o.city,o.postal_code,"Canada"].filter(Boolean).join(", ");
+return "https://www.google.com/maps/dir/?api=1&destination="+encodeURIComponent(destination);
+}
+async function renderDriverStops(){
+const rid=driverSelectedRoute||routes[0]?.id,r=routes.find(x=>x.id===rid);
+if(!r){renderDriverHome();return}
+driverSelectedRoute=rid;
+if(!["out_for_delivery","completed"].includes(r.status)){await renderDriverReady();return}
+const selectedOrders=orders.filter(o=>o.route_id===rid).sort((a,b)=>(a.stop_sequence??999)-(b.stop_sequence??999));
+const completed=selectedOrders.filter(o=>["delivered","failed"].includes(o.status)).length;
+setView(card(driverRouteTitle(r),'<div class="flex"><span>'+pill(r.status)+'</span><span class="subtle">'+completed+' / '+selectedOrders.length+' stops completed</span><button class="mutedbtn" data-driver-back>All routes</button></div><div class="driver-progress"><div class="driver-progress-fill" style="width:'+(100*completed/Math.max(1,selectedOrders.length))+'%"></div></div>'+
+'<p>Drive safely. Navigate one stop at a time. Tap <strong>Reached</strong> when you arrive; photo POD is required before Delivered.</p>'+
+selectedOrders.map((o,i)=>'<div class="driver-stop-card"><div class="flex" style="justify-content:space-between;align-items:center"><div class="flex"><div class="stopnum">'+escape(o.stop_sequence??i+1)+'</div><div><strong>'+escape(o.recipient_name)+'</strong><div class="subtle">'+escape(o.address_line1+", "+(o.address_line2||"")+", "+o.city)+'</div></div></div>'+pill(o.status)+'</div>'+
+'<div class="actions" style="margin-top:12px">'+(!["delivered","failed","cancelled"].includes(o.status)?'<button data-driver-go="'+escape(o.id)+'">Navigate</button><button class="successbtn" data-driver-reached="'+escape(o.id)+'">Reached</button>':'<button class="mutedbtn" data-activity="'+escape(o.id)+'">View POD / notes</button>')+'</div></div>').join("")));
+}
+async function openDriverArrival(orderId,reached=false){
+const o=orders.find(x=>x.id===orderId);
+if(!o)throw Error("Stop not found in today's route.");
+driverActiveStop=orderId;driverArrivalReady=reached;driverPODReady=false;
+const proof=await edge("eksa-delivery",{action:"list_pod",order_id:orderId});
+driverPODReady=(proof.pod||[]).some(x=>x.has_photo);
+const existing=document.getElementById("driverArrivalDialog");if(existing)existing.remove();
+const modal=document.createElement("dialog");modal.id="driverArrivalDialog";modal.style.cssText="width:min(610px,95vw);max-height:92vh;overflow:auto;border:1px solid #d5e2f2;border-radius:18px;padding:23px";
+const photoCount=(proof.pod||[]).filter(x=>x.has_photo).length;
+modal.innerHTML='<h2>Stop '+escape(o.stop_sequence||"")+" · "+escape(o.recipient_name)+'</h2><p>'+escape(o.address_line1+", "+(o.address_line2||"")+", "+o.city+" "+(o.postal_code||""))+'</p>'+
+card("Delivery instructions",'<p style="color:#142248">'+escape(o.delivery_instructions||"No special instructions.")+'</p>')+
+'<div class="actions"><a class="link-button" href="'+driverNavUrl(o)+'" target="_blank" rel="noopener">Open Google Maps</a>'+(o.recipient_phone?'<a class="link-button mutedbtn" href="tel:'+escape(o.recipient_phone)+'">Call customer</a>':'<span class="subtle">No customer phone provided</span>')+'</div>'+
+'<p class="subtle">Phone number is not displayed. Tap Call customer to dial.</p>'+
+'<h3 style="margin-top:22px">Mandatory photo proof of delivery</h3><p>'+(driverPODReady?'<strong>Photo saved · '+photoCount+' attachment(s)</strong>':'Capture the meal at the authorized drop-off location. Do not photograph sensitive information unnecessarily.')+'</p>'+
+'<form id="driverPodForm"><label>Take or upload a photo (JPEG/PNG, max 5 MB)</label><input type="file" name="photo" accept="image/jpeg,image/png" capture="environment" required><button type="submit">Save POD photo</button></form>'+
+'<hr style="border:0;border-top:1px solid #e4eaf4;margin:20px 0"><div class="actions"><button id="driverDeliverConfirm" class="successbtn" type="button" '+(!driverPODReady?"disabled":"")+' data-confirm-delivery="'+escape(orderId)+'">Delivered</button><button class="mutedbtn" data-open-failure="'+escape(orderId)+'">Unable to deliver</button><button class="mutedbtn" data-arrival-close>Close</button></div>'+
+'<div id="driverFailurePanel" class="hidden"><h3>Reason delivery could not be completed</h3><form id="driverFailureForm"><label>Reason</label><select name="reason" required><option value="">Choose reason</option><option>Customer unavailable</option><option>Cannot access building / buzzer</option><option>Incorrect or incomplete address</option><option>Customer refused delivery</option><option>Food damaged / packaging issue</option><option>Missing or incorrect meal bags</option><option>Unsafe delivery conditions</option><option>Customer requested reschedule</option><option>Other</option></select><label>Additional details</label><textarea name="details" maxlength="700" placeholder="What happened? What should EKSA do next?"></textarea><button type="submit" class="mutedbtn">Report failed delivery</button></form></div>';
+document.body.append(modal);modal.showModal();modal.addEventListener("close",()=>modal.remove(),{once:true});
+modal.addEventListener("click",async event=>{
+const b=event.target.closest("button");if(!b)return;
+if(b.dataset.arrivalClose!==undefined){modal.close();return}
+if(b.dataset.openFailure){modal.querySelector("#driverFailurePanel").classList.remove("hidden");modal.querySelector("#driverFailurePanel").scrollIntoView({behavior:"smooth"});return}
+if(b.dataset.confirmDelivery){
+if(!driverPODReady)return alert("A POD photo must be saved first.");
+if(!confirm("Confirm this meal was delivered and the POD photo is saved?"))return;
+b.disabled=true;
+try{await edge("eksa-delivery",{action:"update_status",order_id:orderId,status:"delivered"});modal.close();await driverCommon();await renderDriverStops();notify("Delivered! Proof of delivery saved and company tracking updated.","ok")}
+catch(err){alert(err.message);b.disabled=false}
+}
+});
+modal.addEventListener("submit",async event=>{
+event.preventDefault();
+const form=event.target,b=event.submitter;if(b)b.disabled=true;
+try{
+if(form.id==="driverPodForm"){
+const photo=new FormData(form).get("photo");
+if(!(photo instanceof File)||!["image/jpeg","image/png"].includes(photo.type)||photo.size>5000000||photo.size<100)throw Error("Choose a JPEG or PNG photo under 5 MB.");
+const encoded=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onerror=()=>reject(Error("Photo could not be read."));reader.onload=()=>resolve(String(reader.result).split(",")[1]);reader.readAsDataURL(photo)});
+await edge("eksa-delivery",{action:"upload_pod_photo",order_id:orderId,photo_base64:encoded});
+driverPODReady=true;modal.querySelector("#driverDeliverConfirm").disabled=false;
+notify("POD photo securely saved. Tap Delivered when you have completed the handoff.","ok");
+}
+if(form.id==="driverFailureForm"){
+const fd=new FormData(form),reason=String(fd.get("reason")||""),details=String(fd.get("details")||"").trim();
+if(!reason)throw Error("Select the reason.");
+await edge("eksa-delivery",{action:"update_status",order_id:orderId,status:"failed",notes:reason+(details?" · "+details:"")});
+modal.close();await driverCommon();await renderDriverStops();notify("Delivery exception reported to EKSA.","ok");
+}
+}catch(err){alert(err.message)}
+finally{if(b)b.disabled=false}
+});
+}
+async function renderDriverEarnings(){
+setView(card("My earnings",'<p>Choose a date range to see completed work and payout records. Final pay depends on your approved EKSA rate and payout statement.</p>'+
+'<form id="driverEarningsForm" class="flex"><div class="field"><label>From</label><input type="date" name="start" id="driverEarningsFrom" value="'+date()+'" required></div><div class="field"><label>To</label><input type="date" name="end" id="driverEarningsTo" value="'+date()+'" required></div><button>Show earnings</button></form><div id="driverEarningsResult"></div>'));
+await refreshDriverEarnings(date(),date());
+}
+async function refreshDriverEarnings(from,to){
+if(from>to)throw Error("The start date cannot be later than the end date.");
+const routesInRange=await rest("routes","select=id,route_date,status&route_date=gte."+encodeURIComponent(from)+"&route_date=lte."+encodeURIComponent(to)+"&limit=1000");
+const ordersInRange=await rest("orders","select=id,route_id,status,delivery_date&delivery_date=gte."+encodeURIComponent(from)+"&delivery_date=lte."+encodeURIComponent(to)+"&limit=3000");
+const routeIds=new Set(routesInRange.map(x=>x.id));
+const mine=ordersInRange.filter(x=>routeIds.has(x.route_id));
+const delivered=mine.filter(x=>x.status==="delivered").length,failed=mine.filter(x=>x.status==="failed").length;
+const [rates,paid,approved]=await Promise.all([
+ rest("eksa_driver_rates","select=currency,delivered_rate,failed_rate,route_flat_rate&driver_id=eq."+driver.id),
+ rest("driver_payouts","select=period_start,period_end,total,currency,status,paid_at&status=eq.paid&limit=100"),
+ rest("eksa_driver_payouts","select=period_start,period_end,subtotal,currency,status,paid_at&status=in.(approved,paid)&limit=100")
 ]);
-const dialog=document.createElement("dialog");dialog.id="eksaActivityDialog";dialog.style.cssText="width:min(580px,95vw);max-height:88vh;overflow:auto;border:1px solid #d4e0f1;border-radius:17px;padding:23px";
-const items=(notes.events||[]).slice(0,30);
-const photos=(pods.pod||[]);
-const canPhoto=role==="driver"&&orders.some(x=>x.id===orderId&&x.status==="delivered");
-dialog.innerHTML='<h2>Order updates · Notes & proof</h2><p>Updates are shared with the authorized EKSA team, assigned driver and the meal-prep company.</p>'+
-'<h3>Delivery proof</h3>'+(photos.length?photos.map(x=>'<div class="stoprow"><div class="stopdetail">'+escape(x.created_at||"")+" · "+escape(x.recipient_name||"Delivery confirmed")+'</div>'+(x.has_photo?'<button class="minibtn mutedbtn" data-pod="'+escape(x.id)+'">View photo</button>':"No photo")+'</div>').join(""):'<p>No proof recorded yet.</p>')+
-(canPhoto?'<form id="podUploadForm"><label>Attach delivery photo (JPG or PNG, max 5 MB)</label><input type="file" name="photo" accept="image/jpeg,image/png" required><button>Upload proof of delivery</button></form>':"")+
-'<h3 style="margin-top:20px">Comments & issues</h3>'+(items.length?'<ul>'+items.map(x=>'<li>'+escape(x.created_at||"")+" · "+escape(x.notes||"")+'</li>').join("")+'</ul>':'<p>No comments recorded.</p>')+
-'<form id="orderCommentForm"><label>Message or correction request</label><textarea name="note" maxlength="1000" placeholder="Describe the issue or necessary correction. EKSA Admin reviews any changes to active routes." required></textarea><button>Add comment</button></form>'+
-'<div style="margin-top:18px"><button class="mutedbtn" type="button" data-close>Close</button></div>';
-document.body.append(dialog);dialog.showModal();
-dialog.addEventListener("close",()=>dialog.remove(),{once:true});
-dialog.addEventListener("click",async e=>{
-const b=e.target.closest("button");if(!b)return;
-if(b.dataset.close!==undefined){dialog.close();return}
-if(b.dataset.pod){
-try{
-const d=await edge("eksa-delivery",{action:"get_pod_photo_url",order_id:orderId,pod_id:b.dataset.pod});
-window.open(d.url,"_blank","noopener");
-}catch(err){alert(err.message)}
-}
-});
-dialog.addEventListener("submit",async e=>{
-e.preventDefault();const form=e.target;const btn=e.submitter;if(btn)btn.disabled=true;
-try{
-if(form.id==="orderCommentForm"){
-const note=String(new FormData(form).get("note")||"").trim();
-if(!note)throw Error("Enter a comment first");
-await edge("eksa-comments",{action:"create",order_id:orderId,note});
-dialog.close();notify("Comment saved to the order's activity history.","ok");
-}
-if(form.id==="podUploadForm"){
-const file=new FormData(form).get("photo");
-if(!(file instanceof File)||!["image/jpeg","image/png"].includes(file.type)||file.size>5000000||file.size<100)throw Error("Choose a JPEG or PNG photo smaller than 5 MB.");
-const b64=await new Promise((resolve,reject)=>{
- const reader=new FileReader();reader.onerror=()=>reject(Error("Could not read photo"));reader.onload=()=>resolve(String(reader.result).split(",")[1]);reader.readAsDataURL(file)});
-await edge("eksa-delivery",{action:"upload_pod_photo",order_id:orderId,photo_base64:b64});
-dialog.close();notify("Proof-of-delivery photo saved privately.","ok");
-}
-}catch(err){alert(err.message)}
-finally{if(btn)btn.disabled=false}
-});
-}
-
-function renderDeliveries(){
-setView(card("Delivery stops",'<p>Update stop status after delivery. Status changes are shared with the admin and company dashboards.</p>'+table(["Stop","Customer","Address","Phone","Instructions","Status","Action"],orders.map(o=>'<tr>'+cell(o.stop_sequence??"—")+cell(o.recipient_name)+cell(o.address_line1+", "+(o.address_line2||"")+", "+o.city)+(o.recipient_phone?'<td><a href="tel:'+escape(o.recipient_phone)+'">'+escape(o.recipient_phone)+'</a></td>':'<td>—</td>')+cell(o.delivery_instructions||"—")+'<td>'+pill(o.status)+'</td><td>'+(!["delivered","failed","cancelled"].includes(o.status)?'<div class="actions"><button class="minibtn" data-delivery="'+escape(o.id)+'" data-status="out_for_delivery">Start</button><button class="minibtn" data-delivery="'+escape(o.id)+'" data-status="delivered">Delivered</button><button class="minibtn mutedbtn" data-delivery="'+escape(o.id)+'" data-status="failed">Failed</button><button class="minibtn mutedbtn" data-activity="'+escape(o.id)+'">Notes / issue</button></div>':'<button class="minibtn mutedbtn" data-activity="'+escape(o.id)+'">Proof & notes</button>')+'</td></tr>'))));
+const rate=rates[0];
+const estimated=rate?delivered*Number(rate.delivered_rate||0)+failed*Number(rate.failed_rate||0)+routesInRange.filter(x=>x.status==="completed").length*Number(rate.route_flat_rate||0):null;
+const payouts=[...paid.map(x=>({...x,amount:x.total})),...approved.map(x=>({...x,amount:x.subtotal}))].filter(x=>x.period_start<=to&&x.period_end>=from);
+const div=E("driverEarningsResult");if(!div)return;
+div.innerHTML=tiles([metric(routesInRange.length,"Routes in period"),metric(delivered,"Delivered"),metric(failed,"Failed"),metric(estimated===null?"Rate not set":cash(estimated,rate.currency||"CAD"),"Estimated earnings")])+
+'<p class="subtle">Estimate is based on configured delivered/failed rates and completed-route flat rates. Final approved payout may differ. The app does not send money.</p>'+
+card("Approved & paid payout records",table(["Period","Status","Amount"],payouts.map(x=>'<tr>'+cell(x.period_start+" – "+x.period_end)+'<td>'+pill(x.status)+'</td>'+cell(cash(x.amount,x.currency))+'</tr>')));
 }
 async function companyLoad(){
 orders=await rest("orders","select=id,external_order_id,recipient_name,address_line1,city,postal_code,status,stop_sequence,route_id,delivery_date,client_id&delivery_date=eq."+date()+"&order=stop_sequence.asc&limit=750");
