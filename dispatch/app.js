@@ -763,6 +763,29 @@ if(b.dataset.revokeIntegration){
  await load();notify("Key revoked.","ok");return;
 }
 
+
+if(b.dataset.printMissing!==undefined){
+ const d=window.companyDashboard;
+ const rows=(d?.orders||[]).filter(o=>o.status!=="cancelled"
+  &&(companySelectedCity==="all"||o.city.toLowerCase()===companySelectedCity.toLowerCase())
+  &&o.label_status!=="printed"
+  &&(!companySearch||[o.external_order_id,o.recipient_name,o.address_line1,o.city].join(" ").toLowerCase().includes(companySearch.toLowerCase()))).slice(0,60);
+ if(!rows.length){notify("All labels are confirmed printed for the selected city.","ok");return}
+ const success=await printBagLabels(rows.map(o=>o.id));
+ if(success){window.eksaLastPrintedBatch=rows.map(o=>({id:o.id,revision:o.label_revision}));notify("Opened "+rows.length+" orders for printing. Confirm the batch ONLY after printing and checking all bag labels.","ok")}
+ return;
+}
+if(b.dataset.confirmLastBatch!==undefined){
+ const rows=window.eksaLastPrintedBatch||[];
+ if(!rows.length)throw Error("Use Print missing labels first. Confirm refers only to the most recently generated batch.");
+ if(!confirm("Have you PHYSICALLY printed and checked all bag labels for "+rows.length+" orders? If a label did not print, cancel and reprint."))return;
+ b.disabled=true;
+ const r=await edge("eksa-company-orders",{action:"confirm_batch",order_ids:rows.map(o=>o.id),revisions:rows.map(o=>o.revision)});
+ if(!r.success)throw Error(r.error||"Some orders have changed. Reprint the affected labels.");
+ window.eksaLastPrintedBatch=null;
+ await load();
+ notify(r.printed_orders+" orders confirmed printed. All route labels must be current before dispatch.","ok");return;
+}
 if(b.dataset.cityFilter!==undefined){
  companySelectedCity=b.dataset.cityFilter;renderCompanyOrders();return;
 }
