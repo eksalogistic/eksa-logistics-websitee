@@ -524,7 +524,7 @@ const d=window.companyDashboard;if(!d)return;
 const all=(d.orders||[]).filter(o=>o.status!=="cancelled");
 const selected=companySelectedCity==="all"?all:all.filter(o=>o.city.trim().toLowerCase()===companySelectedCity.toLowerCase());
 const filtered=selected.filter(o=>(companyOrderFilter==="all"||companyOrderFilter==="not_printed"&&o.label_status!=="printed"||companyOrderFilter==="printed"&&o.label_status==="printed"||companyOrderFilter==="pending"&&!["delivered","failed","out_for_delivery"].includes(o.status)||companyOrderFilter===o.status)&&(!companySearch||[o.external_order_id,o.recipient_name,o.address_line1,o.city].join(" ").toLowerCase().includes(companySearch.toLowerCase())));
-const counts={total:selected.length,delivered:selected.filter(x=>x.status==="delivered").length,onRoute:selected.filter(x=>x.status==="out_for_delivery").length,pending:selected.filter(x=>!["delivered","failed","out_for_delivery"].includes(x.status)).length,failed:selected.filter(x=>x.status==="failed").length,printed:selected.filter(x=>x.label_status==="printed").length,unprinted:selected.filter(x=>x.label_status!=="printed").length};
+const counts={total:selected.length,delivered:selected.filter(x=>x.status==="delivered").length,onRoute:selected.filter(x=>x.status==="out_for_delivery").length,pending:selected.filter(x=>!["delivered","failed","out_for_delivery"].includes(x.status)).length,failed:selected.filter(x=>x.status==="failed").length,printed:selected.filter(x=>x.label_status==="printed").reduce((n,x)=>n+Number(x.bag_count||0),0),unprinted:selected.filter(x=>x.label_status!=="printed").reduce((n,x)=>n+Number(x.bag_count||0),0)};
 const metricButton=(value,label,filter,color)=>'<button type="button" class="company-metric '+(companyOrderFilter===filter?"active":"")+'" data-label-filter="'+escape(filter)+'"><strong>'+escape(value)+'</strong><span>'+escape(label)+'</span></button>';
 const cityNames=[...new Set([...(d.available_cities||[]),...all.map(o=>o.city)])];
 const cityButton=city=>'<button type="button" class="company-city-btn '+(companySelectedCity===city?"active":"")+'" data-city-filter="'+escape(city)+'">'+escape(city==="all"?"All GTA":city)+' <strong>'+escape(city==="all"?all.length:all.filter(o=>o.city.trim().toLowerCase()===city.toLowerCase()).length)+'</strong></button>';
@@ -925,6 +925,11 @@ if(!row||dragIndex===null)return;
 e.preventDefault();const to=Number(row.dataset.index),from=dragIndex;dragIndex=null;moveOrder(from,to);
 });
 E("view").addEventListener("dragend",()=>{dragIndex=null;E("view").querySelectorAll(".dragging").forEach(x=>x.classList.remove("dragging"))});
+setInterval(()=>{
+ if(!token||role!=="client"||tab!=="companyorders"||document.visibilityState!=="visible")return;
+ if(document.querySelector("dialog[open]")||["INPUT","TEXTAREA","SELECT"].includes(document.activeElement?.tagName))return;
+ loadCompanyDashboard().catch(()=>{});
+},20000);
 setInterval(()=>{
 if(!token||changed||document.visibilityState!=="visible"||!selectedRoute||!E("routeMapArea"))return;
 if(["map","companymap","routes","today"].includes(tab))showRoute(selectedRoute).catch(()=>{});
