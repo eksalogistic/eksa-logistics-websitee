@@ -143,7 +143,7 @@ async function openAdminOrder(id){
  const form='<form id="adminEditOrder"><div class="cols">'+fields.map(([key,label])=>'<div><label>'+label+'</label>'+(key==="delivery_instructions"?'<textarea name="'+key+'" maxlength="1000">'+escape(o[key]||"")+'</textarea>':'<input name="'+key+'" value="'+escape(o[key]||"")+'" '+(["recipient_name","address_line1","city"].includes(key)?"required":"")+'>')+'</div>').join("")+'</div><div style="margin:12px 0"><label>Reason for change (audit history)</label><input name="reason" placeholder="Corrected address, customer request, etc."></div><button>Save customer changes</button></form>';
  wrapper.innerHTML='<h2>Order '+escape(o.external_order_id)+'</h2><p>'+pill(o.status)+' '+escape(o.route_id?"Assigned to a route":"Not assigned")+'</p>'+form+
  '<h3>Bags ('+bags.length+')</h3>'+bags.map(b=>'<div class="flex" style="align-items:center;margin:6px 0"><span>Bag '+escape(b.bag_number)+' · '+escape(b.barcode)+'</span>'+(b.scanned_pickup_at?' <strong>Scanned</strong>':'<button class="minibtn mutedbtn" data-remove-bag="'+escape(b.id)+'">Remove bag</button>')+'</div>').join("")+
- '<div class="actions" style="margin:12px 0"><button class="minibtn" data-add-bag>Add bag</button>'+(o.route_id?'<button class="minibtn mutedbtn" data-remove-route>Remove from route</button>':'<button class="minibtn mutedbtn" data-cancel-order>Cancel order</button>')+'</div>'+
+ '<div class="actions" style="margin:12px 0"><button class="minibtn" data-verify-address>Verify address with Google</button><button class="minibtn" data-add-bag>Add bag</button>'+(o.route_id?'<button class="minibtn mutedbtn" data-remove-route>Remove from route</button>':'<button class="minibtn mutedbtn" data-cancel-order>Cancel order</button>')+'</div>'+
  '<h3>Operations note</h3><form id="adminOrderNote"><textarea name="note" required maxlength="1000" placeholder="Leave an operations note or issue for the team"></textarea><button>Save note</button></form>'+
  '<h3>Event history</h3>'+(events.length?'<ul>'+events.slice(0,30).map(ev=>'<li>'+escape(ev.event_type)+' · '+escape(ev.created_at)+' '+escape(ev.notes||"")+'</li>').join("")+'</ul>':'<p>No events yet.</p>')+
  '<div class="actions" style="margin-top:18px"><button class="mutedbtn" data-close>Close</button></div>';
@@ -158,7 +158,13 @@ async function openAdminOrder(id){
    const b=e.target.closest("button");if(!b||b.type==="submit")return;
    if(b.dataset.close!==undefined){dialog.close();return}
    try{
-     if(b.dataset.addBag!==undefined)await act("add_bag",{reason:"Bag quantity correction"});
+     if(b.dataset.verifyAddress!==undefined){
+const result=await edge("eksa-geocode",{action:"geocode",order_id:id});
+if(!result.success)throw Error(result.error||"Could not verify address");
+notify("Customer street address verified. The route map will update when refreshed.","ok");
+dialog.close();await load();return;
+}
+if(b.dataset.addBag!==undefined)await act("add_bag",{reason:"Bag quantity correction"});
      if(b.dataset.removeBag){if(confirm("Remove this unscanned bag?"))await act("remove_bag",{bag_id:b.dataset.removeBag,reason:"Bag quantity correction"})}
      if(b.dataset.removeRoute!==undefined){if(confirm("Unassign this order from the route?"))await act("remove_from_route",{reason:"Admin route correction"})}
      if(b.dataset.cancelOrder!==undefined){if(confirm("Cancel this order?"))await act("cancel_order",{reason:"Cancelled by EKSA admin"})}
@@ -245,7 +251,7 @@ table(["Order","Company","Customer / address","City","Stop","Status","Actions"],
 function renderAdminRoutes(){
 const look=Object.fromEntries(drivers.map(x=>[x.id,x.display_name]));
 const options=drivers.filter(x=>x.active).map(x=>'<option value="'+escape(x.id)+'">'+escape(x.display_name)+'</option>').join("");
-const tableRows=routes.map(r=>'<tr>'+cell(r.city_group)+cell(r.route_date)+'<td>'+pill(r.status)+'</td>'+cell(look[r.driver_id]||"Unassigned")+'<td><div class="actions"><button class="minibtn" data-map="'+escape(r.id)+'">Map</button>'+
+const tableRows=routes.map(r=>'<tr>'+cell(r.city_group)+cell(r.route_date)+'<td>'+pill(r.status)+'</td>'+cell(look[r.driver_id]||"Unassigned")+'<td><div class="actions"><button class="minibtn" data-map="'+escape(r.id)+'">Map</button><button class="minibtn mutedbtn" data-opt-preview="'+escape(r.id)+'">Check optimization</button>'+
 (!r.driver_id?'<select style="max-width:180px" data-pick="'+escape(r.id)+'"><option value="">Select driver</option>'+options+'</select><button class="minibtn" data-assign="'+escape(r.id)+'">Assign</button>':"")+'</div></td></tr>');
 setView(card("Create routes",'<form class="flex" id="createRoute"><div class="field"><label>City</label><input name="city" required value="Brampton"></div><div class="field"><label>Maximum bags per route</label><input name="bags" type="number" min="1" max="300" value="80" required></div><button>Create routes</button></form><p>Routes can be planned and assigned before bags are scanned. Drivers confirm pickup before departure.</p>')+card("Assigned and draft routes",table(["City","Date","Status","Driver","Actions"],tableRows))+'<section id="routeMapArea"></section>');
 }
@@ -438,6 +444,27 @@ if(e.target.id==="scanRoute"&&e.target.value){try{await pickupCounts(e.target.va
 E("view").addEventListener("click",async e=>{
 const b=e.target.closest("button");if(!b)return;
 try{
+if(b.dataset.optPreview){
+const result=await edge("eksa-optimize",{action:"preview",route_id:b.dataset.optPreview});
+if(result.success!==true)throw Error(result.error||"Route cannot be optimized yet");
+const lat=prompt("Pickup latitude (decimal degrees). Example: 43.68", "43.68");
+if(lat===null)return;
+const lng=prompt("Pickup longitude (decimal degrees). Example: -79.76", "-79.76");
+if(lng===null)return;
+const endLat=prompt("Optional route end latitude; leave blank to finish at last stop","");
+if(endLat===null)return;
+const endLng=endLat.trim()?prompt("Route end longitude (decimal degrees)",""):null;
+if(endLat.trim()&&endLng===null)return;
+const start_latitude=Number(lat),start_longitude=Number(lng);
+if(!Number.isFinite(start_latitude)||!Number.isFinite(start_longitude)||start_latitude<40||start_latitude>60||start_longitude>-70||start_longitude< -100)throw Error("Check the pickup coordinates.");
+const args={action:"optimize",route_id:b.dataset.optPreview,start_latitude,start_longitude};
+if(endLat.trim()){args.end_latitude=Number(endLat);args.end_longitude=Number(endLng);if(!Number.isFinite(args.end_latitude)||!Number.isFinite(args.end_longitude))throw Error("Invalid route end coordinates");}
+if(!confirm("Optimize this route using verified street coordinates? This will replace the current draft sequence."))return;
+b.disabled=true;
+const opt=await edge("eksa-optimize",args);
+await load();
+notify("Google route optimized: "+opt.optimized_stops+" stops. Review the map and sequence before dispatch.","ok");return;
+}
 if(b.dataset.startRoute){
  if(!confirm("Start this route? All bags must be scanned. Eligible customers will be queued for an on-the-way SMS; no SMS is sent until the provider is enabled."))return;
  b.disabled=true;
