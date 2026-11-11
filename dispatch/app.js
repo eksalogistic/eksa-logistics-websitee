@@ -346,10 +346,33 @@ if(!["out_for_delivery","completed"].includes(r.status)){await renderDriverReady
 const selectedOrders=orders.filter(o=>o.route_id===rid).sort((a,b)=>(a.stop_sequence??999)-(b.stop_sequence??999));
 const completed=selectedOrders.filter(o=>["delivered","failed"].includes(o.status)).length;
 setView(card(driverRouteTitle(r),'<div class="flex"><span>'+pill(r.status)+'</span><span class="subtle">'+completed+' / '+selectedOrders.length+' stops completed</span><button class="mutedbtn" data-driver-back>All routes</button></div><div class="driver-progress"><div class="driver-progress-fill" style="width:'+(100*completed/Math.max(1,selectedOrders.length))+'%"></div></div>'+
-'<p>Drive safely. Navigate one stop at a time. Tap <strong>Reached</strong> when you arrive; photo POD is required before Delivered.</p>'+
+'<p>Drive safely. Navigate one stop at a time. Tap <strong>Reached</strong> when you arrive; photo POD is required before Delivered.</p><div id="driverMapCanvas" class="mapcanvas" style="height:320px;margin:16px 0"></div>'+
 selectedOrders.map((o,i)=>'<div class="driver-stop-card"><div class="flex" style="justify-content:space-between;align-items:center"><div class="flex"><div class="stopnum">'+escape(o.stop_sequence??i+1)+'</div><div><strong>'+escape(o.recipient_name)+'</strong><div class="subtle">'+escape(o.address_line1+", "+(o.address_line2||"")+", "+o.city)+'</div></div></div>'+pill(o.status)+'</div>'+
-'<div class="actions" style="margin-top:12px">'+(!["delivered","failed","cancelled"].includes(o.status)?'<button data-driver-go="'+escape(o.id)+'">Navigate</button><button class="successbtn" data-driver-reached="'+escape(o.id)+'">Reached</button>':'<button class="mutedbtn" data-activity="'+escape(o.id)+'">View POD / notes</button>')+'</div></div>').join("")));
+'<div class="actions" style="margin-top:12px">'+(!["delivered","failed","cancelled"].includes(o.status)?'<button data-driver-go="'+escape(o.id)+'">Navigate</button><button class="successbtn" data-driver-reached="'+escape(o.id)+'">Reached</button>':'<button class="mutedbtn" data-activity="'+escape(o.id)+'">View POD / notes</button>')+'</div></div>').join("")))
+await showDriverNumberedMap(rid);
+
 }
+async function showDriverNumberedMap(routeId){
+ const area=E("driverMapCanvas");if(!area)return;
+ area.innerHTML='<div class="empty">Loading numbered delivery map…</div>';
+ try{
+ const result=await edge("eksa-route-map",{action:"map",route_id:routeId});
+ const coords=(result.orders||[]).filter(x=>x.latitude!==null&&x.longitude!==null&&Number.isFinite(Number(x.latitude))&&Number.isFinite(Number(x.longitude)));
+ if(!E("driverMapCanvas"))return;
+ if(!coords.length){area.innerHTML='<div class="empty">No verified map coordinates yet. Use each stop’s Navigate button for Google Maps and ask EKSA to verify the addresses.</div>';return}
+ if(!window.L){area.innerHTML='<div class="empty">Map tiles unavailable. Google Maps navigation remains available per stop.</div>';return}
+ clearMap();area.innerHTML='';
+ map=L.map("driverMapCanvas",{scrollWheelZoom:false});
+ L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:18,attribution:'&copy; OpenStreetMap contributors'}).addTo(map);
+ mapLayer=L.featureGroup().addTo(map);
+ coords.forEach((x,i)=>{
+ const pin=L.divIcon({html:'<div class="badgepoint">'+escape(x.stop_sequence??i+1)+'</div>',className:"",iconSize:[30,30],iconAnchor:[15,15]});
+ L.marker([Number(x.latitude),Number(x.longitude)],{icon:pin}).bindPopup('<b>Stop '+escape(x.stop_sequence??i+1)+'</b><p>'+escape(x.address_line1+", "+x.city)+'</p>').addTo(mapLayer);
+ });
+ map.fitBounds(mapLayer.getBounds().pad(.2));setTimeout(()=>{if(map)map.invalidateSize()},150);
+ }catch(err){if(E("driverMapCanvas"))area.innerHTML='<div class="empty">Map unavailable: '+escape(err.message)+'. Use Navigate for turn-by-turn directions.</div>'}
+}
+
 async function openDriverArrival(orderId,reached=false){
 const o=orders.find(x=>x.id===orderId);
 if(!o)throw Error("Stop not found in today's route.");
