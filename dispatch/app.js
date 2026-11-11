@@ -427,10 +427,45 @@ div.innerHTML=tiles([metric(routesInRange.length,"Routes in period"),metric(deli
 '<p class="subtle">Estimate is based on configured delivered/failed rates and completed-route flat rates. Final approved payout may differ. The app does not send money.</p>'+
 card("Approved & paid payout records",table(["Period","Status","Amount"],payouts.map(x=>'<tr>'+cell(x.period_start+" – "+x.period_end)+'<td>'+pill(x.status)+'</td>'+cell(cash(x.amount,x.currency))+'</tr>')));
 }
+
+async function openCompanyOrderEdit(id){
+ const o=orders.find(x=>x.id===id);if(!o)throw Error("Order not available for the selected date.");
+ if(o.route_id||!["received","label_ready"].includes(o.status)){
+  await openOrderActivity(id);
+  notify("The route is already assigned. Leave EKSA a correction request in the order comments.");
+  return;
+ }
+ document.getElementById("eksaCompanyEdit")?.remove();
+ const dialog=document.createElement("dialog");dialog.id="eksaCompanyEdit";dialog.style.cssText="width:min(610px,95vw);max-height:88vh;overflow:auto;border:1px solid #d5e1f0;border-radius:17px;padding:24px";
+ const fields=[["recipient_name","Customer name"],["recipient_phone","Contact number"],["address_line1","Street address"],["address_line2","Unit / buzzer"],["city","City"],["postal_code","Postal code"],["delivery_instructions","Delivery instructions"]];
+ dialog.innerHTML='<h2>Edit order · '+escape(o.external_order_id)+'</h2><p>Changes are allowed only before the order is assigned to a route. Once routed, submit a correction request to EKSA.</p>'+
+ '<form id="editCompanyOrderForm"><div class="cols">'+fields.map(([key,label])=>'<div><label>'+label+'</label>'+(key==="delivery_instructions"?'<textarea name="'+key+'" maxlength="1000">'+escape(o[key]||"")+'</textarea>':'<input name="'+key+'" value="'+escape(o[key]||"")+'" '+(["recipient_name","address_line1","city"].includes(key)?"required":"")+'>')+'</div>').join("")+'</div><button type="submit">Save changes</button></form>'+
+ '<div class="actions" style="margin-top:15px"><button type="button" class="mutedbtn" data-company-cancel>Cancel this order</button><button type="button" class="mutedbtn" data-company-close>Close</button></div>';
+ document.body.append(dialog);dialog.showModal();dialog.addEventListener("close",()=>dialog.remove(),{once:true});
+ dialog.addEventListener("submit",async e=>{
+ e.preventDefault();const b=e.submitter;b.disabled=true;
+ try{
+ const data=Object.fromEntries(new FormData(e.target).entries());
+ await edge("eksa-company-edit",{action:"edit",order_id:id,data});
+ dialog.close();await load();notify("Order updated. If its address changed, EKSA must re-verify the destination before optimizing routes.","ok");
+ }catch(err){alert(err.message);b.disabled=false}
+ });
+ dialog.addEventListener("click",async e=>{
+ const b=e.target.closest("button");if(!b||b.type==="submit")return;
+ if(b.dataset.companyClose!==undefined){dialog.close();return}
+ if(b.dataset.companyCancel!==undefined){
+  if(!confirm("Cancel this order before dispatch?"))return;
+  b.disabled=true;
+  try{await edge("eksa-company-edit",{action:"cancel",order_id:id});dialog.close();await load();notify("Order cancelled before dispatch.","ok")}
+  catch(err){alert(err.message);b.disabled=false}
+ }
+ });
+}
+
 async function companyLoad(){
-orders=await rest("orders","select=id,external_order_id,recipient_name,address_line1,city,postal_code,status,stop_sequence,route_id,delivery_date,client_id&delivery_date=eq."+date()+"&order=stop_sequence.asc&limit=750");
+orders=await rest("orders","select=id,external_order_id,recipient_name,recipient_phone,address_line1,address_line2,delivery_instructions,city,postal_code,status,stop_sequence,route_id,delivery_date,client_id&delivery_date=eq."+date()+"&order=stop_sequence.asc&limit=750");
 if(tab==="company"){setView(tiles([metric(orders.length,"Orders"),metric(orders.filter(x=>x.status==="delivered").length,"Delivered"),metric(orders.filter(x=>x.status==="out_for_delivery").length,"Out for delivery"),metric(orders.filter(x=>x.status==="failed").length,"Failed")])+card("Delivery visibility",'<p>Your company can see only its own orders, stop sequence, delivery statuses, and read-only map. Map changes are reserved for EKSA admin and assigned drivers.</p>'+table(["Order","Customer","City","Status"],orders.map(o=>'<tr>'+cell(o.external_order_id)+cell(o.recipient_name)+cell(o.city)+'<td>'+pill(o.status)+'</td></tr>'))));return}
-if(tab==="companyorders"){setView(bulkUploadCard(false)+card("Submit a new order",'<p>Orders submitted here appear in EKSA Admin automatically. Each bag gets its own barcode label.</p><form id="companyOrderForm"><div class="cols"><div><label>Order reference</label><input name="order_id" required maxlength="100" placeholder="Your order ID"></div><div><label>Delivery date</label><input type="date" name="delivery_date" value="'+date()+'" required></div><div><label>Customer name</label><input name="customer_name" required maxlength="200"></div><div><label>Phone (optional)</label><input type="tel" name="phone" maxlength="30"></div><div><label>Street address</label><input name="address" required maxlength="500"></div><div><label>City</label><input name="city" required maxlength="100"></div><div><label>Postal code</label><input name="postal_code" required maxlength="20"></div><div><label>Unit / buzzer</label><input name="address_line2" maxlength="200"></div><div><label>Delivery instructions</label><input name="delivery_instructions" maxlength="1000" placeholder="Gate code, customer requests"></div><div><label>Number of bags</label><input name="bag_count" type="number" value="1" min="1" max="20" required></div></div><label style="display:flex;gap:9px;align-items:center;margin:12px 0"><input type="checkbox" name="sms_consent" value="yes" style="width:auto">Customer explicitly agreed to SMS delivery updates</label><button type="submit" style="margin-top:16px">Submit order</button></form>')+card("Company delivery orders",'<p>Your company can print bag barcode labels. EKSA and drivers use these to confirm pickup. The delivery map remains read-only.</p><div class="flex"><div class="field"><label>Label paper size</label><select id="labelSize"><option value="thermal">4×6 thermal</option><option value="letter">Letter</option><option value="a4">A4</option></select></div></div>'+table(["Order","Customer / address","Stop","Status","Bag labels"],orders.map(o=>'<tr>'+cell(o.external_order_id)+cell(o.recipient_name+" · "+o.address_line1+", "+o.city)+cell(o.stop_sequence??"—")+'<td>'+pill(o.status)+'</td><td><button class="minibtn" data-print-label="'+escape(o.id)+'">Print bag labels</button><button class="minibtn mutedbtn" data-activity="'+escape(o.id)+'">Request correction / POD</button></td></tr>'))));return}
+if(tab==="companyorders"){setView(bulkUploadCard(false)+card("Submit a new order",'<p>Orders submitted here appear in EKSA Admin automatically. Each bag gets its own barcode label.</p><form id="companyOrderForm"><div class="cols"><div><label>Order reference</label><input name="order_id" required maxlength="100" placeholder="Your order ID"></div><div><label>Delivery date</label><input type="date" name="delivery_date" value="'+date()+'" required></div><div><label>Customer name</label><input name="customer_name" required maxlength="200"></div><div><label>Phone (optional)</label><input type="tel" name="phone" maxlength="30"></div><div><label>Street address</label><input name="address" required maxlength="500"></div><div><label>City</label><input name="city" required maxlength="100"></div><div><label>Postal code</label><input name="postal_code" required maxlength="20"></div><div><label>Unit / buzzer</label><input name="address_line2" maxlength="200"></div><div><label>Delivery instructions</label><input name="delivery_instructions" maxlength="1000" placeholder="Gate code, customer requests"></div><div><label>Number of bags</label><input name="bag_count" type="number" value="1" min="1" max="20" required></div></div><label style="display:flex;gap:9px;align-items:center;margin:12px 0"><input type="checkbox" name="sms_consent" value="yes" style="width:auto">Customer explicitly agreed to SMS delivery updates</label><button type="submit" style="margin-top:16px">Submit order</button></form>')+card("Company delivery orders",'<p>Your company can print bag barcode labels. EKSA and drivers use these to confirm pickup. The delivery map remains read-only.</p><div class="flex"><div class="field"><label>Label paper size</label><select id="labelSize"><option value="thermal">4×6 thermal</option><option value="letter">Letter</option><option value="a4">A4</option></select></div></div>'+table(["Order","Customer / address","Stop","Status","Bag labels"],orders.map(o=>'<tr>'+cell(o.external_order_id)+cell(o.recipient_name+" · "+o.address_line1+", "+o.city)+cell(o.stop_sequence??"—")+'<td>'+pill(o.status)+'</td><td><button class="minibtn" data-print-label="'+escape(o.id)+'">Print bag labels</button><button class="minibtn mutedbtn" data-activity="'+escape(o.id)+'">Request correction / POD</button><button class="minibtn" data-company-edit="'+escape(o.id)+'">Edit before dispatch</button></td></tr>'))));return}
 if(tab==="companymap"){selectRouteView("Company delivery map · Read only");return}
 if(tab==="invoices"){const invoices=await rest("invoices","select=invoice_number,period_start,period_end,total,currency,status,due_date&order=created_at.desc&limit=150");setView(card("Invoices",'<p>Only your company’s finalized and paid invoices appear here.</p>'+table(["Number","Period","Amount","Due","Status"],invoices.map(i=>'<tr>'+cell(i.invoice_number)+cell(i.period_start+" – "+i.period_end)+cell(cash(i.total,i.currency))+cell(i.due_date)+'<td>'+pill(i.status)+'</td></tr>'))));return}
 }
@@ -628,6 +663,7 @@ if(b.dataset.revokeIntegration){
  await edge("eksa-users",{action:"revoke_api_key",integration_id:b.dataset.revokeIntegration});
  await load();notify("Key revoked.","ok");return;
 }
+if(b.dataset.companyEdit){await openCompanyOrderEdit(b.dataset.companyEdit);return;}
 if(b.dataset.activity){await openOrderActivity(b.dataset.activity);return;}
 if(b.dataset.optPreview){
 const result=await edge("eksa-optimize",{action:"preview",route_id:b.dataset.optPreview});
