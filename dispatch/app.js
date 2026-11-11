@@ -313,8 +313,9 @@ if(!r){driverSelectedRoute=null;renderDriverHome();return;}
 if(["out_for_delivery","completed"].includes(r.status)){await renderDriverStops();return;}
 setView(card("Pickup · "+driverRouteTitle(r),'<p>Confirm every physical meal bag before departure. The stop sequence becomes available as the assigned bags are scanned.</p><div id="driverPickupProgress"><div class="empty">Loading bag counts…</div></div>'+
 '<form id="driverScanForm" class="flex" style="margin-top:18px"><div class="field"><label>Scan bag barcode</label><input name="barcode" autocomplete="off" placeholder="Scan using barcode scanner or enter barcode" required autofocus></div><button>Record scan</button></form><p class="subtle">The native mobile app supports camera scanning. This web screen also accepts Bluetooth or USB barcode scanners.</p>'+
-'<div class="actions"><button class="mutedbtn" data-driver-back>Back to routes</button><button class="successbtn" id="driverDepart" data-driver-depart="'+escape(rid)+'" disabled>Start route</button></div>'));
+'<h3>Route map preview</h3><div id="driverPickupMapCanvas" class="mapcanvas" style="height:285px;margin:12px 0"></div><p class="subtle">Numbered stops are a preview. Turn-by-turn navigation unlocks when all bags are scanned and you start the route.</p>'+'<div class="actions"><button class="mutedbtn" data-driver-back>Back to routes</button><button class="successbtn" id="driverDepart" data-driver-depart="'+escape(rid)+'" disabled>Start route</button></div>'));
 await refreshDriverPickup();
+await showDriverNumberedMap(rid,"driverPickupMapCanvas");
 }
 async function refreshDriverPickup(){
 const rid=driverSelectedRoute;if(!rid||!E("driverPickupProgress"))return;
@@ -352,17 +353,17 @@ selectedOrders.map((o,i)=>'<div class="driver-stop-card"><div class="flex" style
 await showDriverNumberedMap(rid);
 
 }
-async function showDriverNumberedMap(routeId){
- const area=E("driverMapCanvas");if(!area)return;
+async function showDriverNumberedMap(routeId,canvasId="driverMapCanvas"){
+ const area=E(canvasId);if(!area)return;
  area.innerHTML='<div class="empty">Loading numbered delivery map…</div>';
  try{
  const result=await edge("eksa-route-map",{action:"map",route_id:routeId});
  const coords=(result.orders||[]).filter(x=>x.latitude!==null&&x.longitude!==null&&Number.isFinite(Number(x.latitude))&&Number.isFinite(Number(x.longitude)));
- if(!E("driverMapCanvas"))return;
+ if(!E(canvasId))return;
  if(!coords.length){area.innerHTML='<div class="empty">No verified map coordinates yet. Use each stop’s Navigate button for Google Maps and ask EKSA to verify the addresses.</div>';return}
  if(!window.L){area.innerHTML='<div class="empty">Map tiles unavailable. Google Maps navigation remains available per stop.</div>';return}
  clearMap();area.innerHTML='';
- map=L.map("driverMapCanvas",{scrollWheelZoom:false});
+ map=L.map(canvasId,{scrollWheelZoom:false});
  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:18,attribution:'&copy; OpenStreetMap contributors'}).addTo(map);
  mapLayer=L.featureGroup().addTo(map);
  coords.forEach((x,i)=>{
@@ -370,7 +371,7 @@ async function showDriverNumberedMap(routeId){
  L.marker([Number(x.latitude),Number(x.longitude)],{icon:pin}).bindPopup('<b>Stop '+escape(x.stop_sequence??i+1)+'</b><p>'+escape(x.address_line1+", "+x.city)+'</p>').addTo(mapLayer);
  });
  map.fitBounds(mapLayer.getBounds().pad(.2));setTimeout(()=>{if(map)map.invalidateSize()},150);
- }catch(err){if(E("driverMapCanvas"))area.innerHTML='<div class="empty">Map unavailable: '+escape(err.message)+'. Use Navigate for turn-by-turn directions.</div>'}
+ }catch(err){if(E(canvasId))area.innerHTML='<div class="empty">Map unavailable: '+escape(err.message)+'. Use Navigate for turn-by-turn directions.</div>'}
 }
 
 async function openDriverArrival(orderId,reached=false){
