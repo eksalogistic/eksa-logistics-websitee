@@ -146,7 +146,7 @@ orders=await rest("orders","select=id,external_order_id,recipient_name,address_l
 async function driverLoad(){
 await driverCommon();const activeIds=new Set(routes.map(r=>r.id));orders=orders.filter(o=>activeIds.has(o.route_id));
 if(tab==="today"){setView(tiles([metric(routes.length,"Assigned routes"),metric(orders.length,"Stops"),metric(orders.filter(o=>o.status==="delivered").length,"Delivered"),metric(orders.filter(o=>o.status==="failed").length,"Failed")])+
-card("My assigned routes",table(["City","Date","Status","Action"],routes.map(r=>'<tr>'+cell(r.city_group)+cell(r.route_date)+'<td>'+pill(r.status)+'</td><td><button data-map="'+escape(r.id)+'">Open map</button></td></tr>')))+'<div id="routeMapArea"></div>');return}
+card("My assigned routes",'<p><strong>Start Route</strong> only becomes available after all assigned bags are scanned. It marks the route out for delivery and queues eligible customer notifications (sending awaits SMS provider setup).</p>'+table(["City","Date","Status","Action"],routes.map(r=>'<tr>'+cell(r.city_group)+cell(r.route_date)+'<td>'+pill(r.status)+'</td><td><div class="actions"><button class="minibtn" data-map="'+escape(r.id)+'">Open map</button>'+(["assigned","loading","ready"].includes(r.status)?'<button class="minibtn" data-start-route="'+escape(r.id)+'">Start route</button>':"")+'</div></td></tr>')))+'<div id="routeMapArea"></div>');return}
 if(tab==="map"){selectRouteView("Driver map & delivery sequence");return}
 if(tab==="scan"){renderScan();return}
 if(tab==="deliveries"){renderDeliveries();return}
@@ -287,6 +287,14 @@ if(e.target.id==="scanRoute"&&e.target.value){try{await pickupCounts(e.target.va
 E("view").addEventListener("click",async e=>{
 const b=e.target.closest("button");if(!b)return;
 try{
+if(b.dataset.startRoute){
+ if(!confirm("Start this route? All bags must be scanned. Eligible customers will be queued for an on-the-way SMS; no SMS is sent until the provider is enabled."))return;
+ b.disabled=true;
+ const res=await edge("eksa-route-start",{action:"start_route",route_id:b.dataset.startRoute});
+ if(res.success===false)throw Error(res.error||"Unable to start route");
+ await load();notify("Route started. "+res.orders_started+" orders out for delivery; "+res.sms_queued+" SMS jobs queued (not yet sent).","ok");
+ return;
+}
 if(b.dataset.printLabel){
 await printBagLabels(b.dataset.printLabel);
 return;
