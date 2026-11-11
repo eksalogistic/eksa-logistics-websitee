@@ -264,6 +264,7 @@ card("Driver team",table(["Driver","Status","Capacity","Routes","Action"],driver
 function renderCompanies(){
 setView(card("Create company",'<form class="flex" id="createCompany"><div class="field"><label>Company name</label><input name="name" required></div><div class="field"><label>Short company code</label><input name="code" required maxlength="20"></div><div class="field"><label>Billing email</label><input name="billing" type="email"></div><button>Add company</button></form>')+
 card("Invite company staff",'<form class="flex" id="inviteCompany"><div class="field"><label>Company</label><select name="client" required><option value="">Select company</option>'+clients.map(c=>'<option value="'+escape(c.id)+'">'+escape(c.name)+'</option>').join("")+'</select></div><div class="field"><label>User email</label><input name="email" type="email" required></div><button>Send invitation</button></form><p>Each company can view only its own deliveries, orders, map, and finalized invoices.</p>')+
+card("EKSA service cities · Company eligibility",'<p>Select which GTA cities EKSA is contracted to deliver for each company. This controls dispatch eligibility, not the Company screen filter.</p><form id="adminServiceCitiesForm"><label>Company</label><select name="client_id" id="adminCityClient" required><option value="">Choose company</option>'+clients.map(c=>'<option value="'+escape(c.id)+'">'+escape(c.name)+'</option>').join("")+'</select><div id="adminCityOptions" class="service-city-grid"><p class="subtle">Choose a company to load its service cities.</p></div><button>Save approved service cities</button></form>')+
 card("Automatic company order integrations",'<p>Create separate, revocable API keys for each company. Each company must still configure its order software to push orders automatically to EKSA.</p>'+
 '<form id="integrationForm" class="flex"><div class="field"><label>Company</label><select name="client" required><option value="">Choose company</option>'+clients.map(c=>'<option value="'+escape(c.id)+'">'+escape(c.name)+'</option>').join("")+'</select></div><div class="field"><label>Integration name</label><input name="name" minlength="2" maxlength="80" placeholder="Nutribox order connection" required></div><button>Create API key</button></form><div id="integrationSecret"></div>'+
 table(["Company","Integration","Status","Action"],(window.eksaIntegrations||[]).map(i=>'<tr>'+cell(clients.find(c=>c.id===i.client_id)?.name||"Company")+cell(i.name)+'<td>'+pill(i.active?"active":"inactive")+'</td><td>'+(i.active?'<button class="minibtn mutedbtn" data-revoke-integration="'+escape(i.id)+'">Revoke</button>':"Revoked")+'</td></tr>'))+
@@ -638,6 +639,14 @@ if(form.id==="driverScanForm"){
 if(form.id==="driverEarningsForm"){
  await refreshDriverEarnings(String(data.get("start")),String(data.get("end")));return;
 }
+if(form.id==="adminServiceCitiesForm"){
+ const client_id=String(data.get("client_id")||"");
+ const cities=[...form.querySelectorAll('input[name="service_city"]:checked')].map(x=>x.value);
+ if(!client_id)throw Error("Choose a company.");
+ if(!confirm("Update EKSA contracted delivery cities for this company?"))return;
+ await edge("eksa-company-orders",{action:"save_service_cities",client_id,cities});
+ notify("Company service cities saved.","ok");return;
+}
 if(form.id==="companyServiceCityForm"){
  const cities=[...form.querySelectorAll('input[name="service_city"]:checked')].map(x=>x.value);
  if(!confirm("Save approved EKSA delivery cities? Orders outside these cities will not be allowed into EKSA routes."))return;
@@ -736,6 +745,17 @@ return;
 });
 E("view").addEventListener("change",async e=>{
 if(e.target.id==="companyOrderSearch"){companySearch=e.target.value;renderCompanyOrders();return;}
+if(e.target.id==="adminCityClient"){
+ const id=e.target.value;
+ const container=E("adminCityOptions");
+ if(!id){container.innerHTML='<p class="subtle">Choose a company.</p>';return}
+ container.innerHTML='<p>Loading cities…</p>';
+ try{
+ const d=await edge("eksa-company-orders",{action:"city_settings",client_id:id});
+ container.innerHTML=(d.available_cities||[]).map(city=>'<label class="service-city-option"><input type="checkbox" name="service_city" value="'+escape(city)+'" '+((d.approved_cities||[]).includes(city)?"checked":"")+'>'+escape(city)+'</label>').join("");
+ }catch(err){container.innerHTML='<div class="notice bad">'+escape(err.message)+'</div>'}
+ return;
+}
 if(e.target.id==="mapRoute"){selectedRoute=e.target.value;await showRoute(selectedRoute)}
 if(e.target.id==="scanRoute"&&e.target.value){try{await pickupCounts(e.target.value)}catch(err){notify(err.message)}}
 });
