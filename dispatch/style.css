@@ -70,3 +70,11 @@ main{width:100%;max-width:1700px;margin:0 auto;min-width:0;padding:34px 36px 55p
 .company-orders-workspace details[open]{padding-bottom:12px}
 @media(max-width:1250px){.company-metrics{grid-template-columns:repeat(3,minmax(0,1fr))}.company-panel-grid{grid-template-columns:1fr}.service-city-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:690px){.company-metrics{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.company-metric{min-height:82px;padding:12px}.company-metric strong{font-size:24px}.service-city-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.company-city-btn{flex-basis:90px;min-width:90px}.company-panel-grid{gap:8px}}
+
+/* Live company trend and activity */
+.eksa-hour-chart{display:flex;gap:4px;align-items:flex-end;height:165px;border-bottom:1px solid #e2e9f6;padding:8px 3px}
+.eksa-hour{display:flex;flex:1;min-width:0;height:100%;flex-direction:column;justify-content:flex-end;align-items:center;gap:5px}
+.eksa-hour-bar{width:70%;min-height:3px;max-height:110px;background:linear-gradient(180deg,#8761ef,#2c67dd);border-radius:5px 5px 1px 1px}
+.eksa-hour small{color:#7183a2;font-size:9px;white-space:nowrap;height:13px}
+.eksa-activity{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 0;border-bottom:1px solid #e9edf5;font-size:12px}
+.eksa-activity:last-child{border-bottom:0}
