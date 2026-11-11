@@ -54,7 +54,7 @@ async function adminCommon(){
 async function adminLoad(){
 await adminCommon();
 if(tab==="overview"||tab==="analytics"){stats=await edge("eksa-owner",{action:"metrics",date:date()});tab==="overview"?renderOverview():renderAnalytics();return;}
-if(tab==="orders"){orders=await rest("orders","select=id,client_id,external_order_id,recipient_name,address_line1,city,postal_code,status,route_id,stop_sequence&delivery_date=eq."+date()+"&order=created_at.desc&limit=1000");renderAdminOrders();return}
+if(tab==="orders"){orders=await rest("orders","select=id,client_id,external_order_id,recipient_name,recipient_phone,address_line1,address_line2,delivery_instructions,city,postal_code,status,route_id,stop_sequence&delivery_date=eq."+date()+"&order=created_at.desc&limit=1000");renderAdminOrders();return}
 if(tab==="routes"){routes=await rest("routes","select=id,city_group,route_date,status,driver_id,sequence_version&route_date=eq."+date()+"&order=created_at.desc&limit=250");renderAdminRoutes();return}
 if(tab==="drivers"){routes=await rest("routes","select=id,driver_id,status&limit=1000");renderDrivers();return}
 if(tab==="companies"){renderCompanies();return}
@@ -109,11 +109,55 @@ notify("Barcode labels opened in a new tab. Choose Print or Save as PDF in your 
 }catch(error){tab.document.body.textContent="Could not generate labels: "+error.message;notify(error.message)}
 }
 
+
+async function openAdminOrder(id){
+ const data=await edge("eksa-admin-edit",{action:"order_details",order_id:id});
+ const o=data.order,bags=data.bags||[],events=data.events||[];
+ document.getElementById("eksaOrderDialog")?.remove();
+ const dialog=document.createElement("dialog");dialog.id="eksaOrderDialog";dialog.style.cssText="width:min(750px,96vw);max-height:90vh;overflow:auto;border:1px solid #ccd7ed;border-radius:16px;padding:24px";
+ const wrapper=document.createElement("div");
+ const fields=[["recipient_name","Customer name"],["recipient_phone","Phone"],["address_line1","Street address"],["address_line2","Unit / buzzer"],["city","City"],["postal_code","Postal code"],["delivery_instructions","Delivery instructions"]];
+ const form='<form id="adminEditOrder"><div class="cols">'+fields.map(([key,label])=>'<div><label>'+label+'</label>'+(key==="delivery_instructions"?'<textarea name="'+key+'" maxlength="1000">'+escape(o[key]||"")+'</textarea>':'<input name="'+key+'" value="'+escape(o[key]||"")+'" '+(["recipient_name","address_line1","city"].includes(key)?"required":"")+'>')+'</div>').join("")+'</div><div style="margin:12px 0"><label>Reason for change (audit history)</label><input name="reason" placeholder="Corrected address, customer request, etc."></div><button>Save customer changes</button></form>';
+ wrapper.innerHTML='<h2>Order '+escape(o.external_order_id)+'</h2><p>'+pill(o.status)+' '+escape(o.route_id?"Assigned to a route":"Not assigned")+'</p>'+form+
+ '<h3>Bags ('+bags.length+')</h3>'+bags.map(b=>'<div class="flex" style="align-items:center;margin:6px 0"><span>Bag '+escape(b.bag_number)+' · '+escape(b.barcode)+'</span>'+(b.scanned_pickup_at?' <strong>Scanned</strong>':'<button class="minibtn mutedbtn" data-remove-bag="'+escape(b.id)+'">Remove bag</button>')+'</div>').join("")+
+ '<div class="actions" style="margin:12px 0"><button class="minibtn" data-add-bag>Add bag</button>'+(o.route_id?'<button class="minibtn mutedbtn" data-remove-route>Remove from route</button>':'<button class="minibtn mutedbtn" data-cancel-order>Cancel order</button>')+'</div>'+
+ '<h3>Operations note</h3><form id="adminOrderNote"><textarea name="note" required maxlength="1000" placeholder="Leave an operations note or issue for the team"></textarea><button>Save note</button></form>'+
+ '<h3>Event history</h3>'+(events.length?'<ul>'+events.slice(0,30).map(ev=>'<li>'+escape(ev.event_type)+' · '+escape(ev.created_at)+' '+escape(ev.notes||"")+'</li>').join("")+'</ul>':'<p>No events yet.</p>')+
+ '<div class="actions" style="margin-top:18px"><button class="mutedbtn" data-close>Close</button></div>';
+ dialog.append(wrapper);document.body.append(dialog);dialog.showModal();
+ const act=async(action,data={})=>{
+   const result=await edge("eksa-admin-edit",{action,entity_id:id,data});
+   if(result.success===false)throw Error(result.error||"Action unavailable");
+   dialog.close();dialog.remove();await load();notify("Order updated. Changes are in the audit trail. Recheck map coordinates after an address change.","ok");
+ };
+ dialog.addEventListener("close",()=>dialog.remove(),{once:true});
+ wrapper.addEventListener("click",async e=>{
+   const b=e.target.closest("button");if(!b||b.type==="submit")return;
+   if(b.dataset.close!==undefined){dialog.close();return}
+   try{
+     if(b.dataset.addBag!==undefined)await act("add_bag",{reason:"Bag quantity correction"});
+     if(b.dataset.removeBag){if(confirm("Remove this unscanned bag?"))await act("remove_bag",{bag_id:b.dataset.removeBag,reason:"Bag quantity correction"})}
+     if(b.dataset.removeRoute!==undefined){if(confirm("Unassign this order from the route?"))await act("remove_from_route",{reason:"Admin route correction"})}
+     if(b.dataset.cancelOrder!==undefined){if(confirm("Cancel this order?"))await act("cancel_order",{reason:"Cancelled by EKSA admin"})}
+   }catch(err){alert(err.message)}
+ });
+ wrapper.addEventListener("submit",async e=>{
+   e.preventDefault();const form=e.target;try{
+    if(form.id==="adminEditOrder"){
+      const fd=new FormData(form);const fields=Object.fromEntries(fd.entries());
+      await act("edit_order",fields);
+    }else if(form.id==="adminOrderNote"){
+      const fd=new FormData(form);await act("add_note",{note:String(fd.get("note")),on_behalf_of:"admin"});
+    }
+   }catch(err){alert(err.message)}
+ });
+}
+
 function renderAdminOrders(){
 const lookup=Object.fromEntries(clients.map(c=>[c.id,c.name]));
 setView(card("Company orders",'<p>Orders arrive automatically from each company. Print a unique barcode label for <strong>each physical bag</strong>; the assigned driver scans those labels at pickup. Use 4×6 thermal labels or regular A4/letter paper.</p>'+
 '<div class="flex" style="margin:12px 0"><div class="field"><label>Label paper size</label><select id="labelSize"><option value="thermal">4×6 thermal</option><option value="letter">Letter</option><option value="a4">A4</option></select></div></div>'+
-table(["Order","Company","Customer / address","City","Stop","Status","Labels"],orders.map(x=>'<tr>'+cell(x.external_order_id)+cell(lookup[x.client_id]||"—")+cell(x.recipient_name+" · "+x.address_line1+" "+(x.postal_code||""))+cell(x.city)+cell(x.stop_sequence??"—")+'<td>'+pill(x.status)+'</td><td><button class="minibtn" data-print-label="'+escape(x.id)+'">Print bag labels</button></td></tr>'))));
+table(["Order","Company","Customer / address","City","Stop","Status","Actions"],orders.map(x=>'<tr>'+cell(x.external_order_id)+cell(lookup[x.client_id]||"—")+cell(x.recipient_name+" · "+x.address_line1+" "+(x.postal_code||""))+cell(x.city)+cell(x.stop_sequence??"—")+'<td>'+pill(x.status)+'</td><td><div class="actions"><button class="minibtn" data-order-details="'+escape(x.id)+'">View / Edit</button><button class="minibtn" data-print-label="'+escape(x.id)+'">Labels</button></div></td></tr>'))));
 }
 function renderAdminRoutes(){
 const look=Object.fromEntries(drivers.map(x=>[x.id,x.display_name]));
@@ -295,6 +339,7 @@ if(b.dataset.startRoute){
  await load();notify("Route started. "+res.orders_started+" orders out for delivery; "+res.sms_queued+" SMS jobs queued (not yet sent).","ok");
  return;
 }
+if(b.dataset.orderDetails){await openAdminOrder(b.dataset.orderDetails);return;}
 if(b.dataset.printLabel){
 await printBagLabels(b.dataset.printLabel);
 return;
