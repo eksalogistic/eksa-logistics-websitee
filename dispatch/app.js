@@ -23,7 +23,7 @@ const edge=(name,data)=>request("/functions/v1/"+name,data);
 const rest=(table,params)=>request("/rest/v1/"+table+"?"+params);
 const dayDefault=()=>{const fmt=new Intl.DateTimeFormat("en-CA",{timeZone:"America/Toronto",year:"numeric",month:"2-digit",day:"2-digit"});const ps=fmt.formatToParts(new Date());const parts=Object.fromEntries(ps.map(p=>[p.type,p.value]));return parts.year+"-"+parts.month+"-"+parts.day};
 function tabList(){
-if(role==="admin")return [["overview","Overview"],["orders","Orders"],["routes","Routes & Map"],["drivers","Drivers"],["analytics","Analytics"],["payouts","Payouts"],["companies","Companies"],["notifications","Notifications"]];
+if(role==="admin")return [["overview","Overview"],["orders","Orders"],["routes","Routes & Map"],["drivers","Drivers"],["analytics","Analytics"],["payouts","Payouts"],["companies","Companies"],["mapaccess","Map permissions"],["notifications","Notifications"]];
 if(role==="driver")return [["today","My routes"],["map","Stops & navigation"],["earnings","My earnings"]];
 return [["company","Overview"],["companyorders","Orders"],["companymap","Delivery map"],["invoices","Invoices"]];
 }
@@ -36,6 +36,7 @@ drivers:'<circle cx="12" cy="8" r="4"/><path d="M4 21v-2a8 8 0 0 1 16 0v2"/>',
 analytics:'<path d="M4 20V12m5 8V7m5 13v-9m5 9V4"/>',
 payouts:'<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><circle cx="12" cy="15" r="2"/>',
 companies:'<path d="M3 21V7l9-4 9 4v14zM8 11h1m6 0h1M8 15h1m6 0h1M10 21v-4h4v4"/>',
+mapaccess:'<path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3zM9 3v15m6-12v15"/>',
 notifications:'<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/>',
 today:'<path d="M3 9h18M7 9V5h10v4M4 9v11h16V9M9 14h6"/>',
 map:'<path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3zM9 3v15m6-12v15"/>',
@@ -81,6 +82,7 @@ if(tab==="orders"){orders=await rest("orders","select=id,client_id,external_orde
 if(tab==="routes"){routes=await rest("routes","select=id,city_group,route_date,status,driver_id,sequence_version&route_date=eq."+date()+"&order=created_at.desc&limit=250");renderAdminRoutes();return}
 if(tab==="drivers"){routes=await rest("routes","select=id,driver_id,status&limit=1000");renderDrivers();return}
 if(tab==="companies"){window.eksaIntegrations=(await edge("eksa-users",{action:"list_integrations"})).integrations||[];renderCompanies();return}
+if(tab==="mapaccess"){await renderMapAccess();return}
 if(tab==="notifications"){await renderNotifications();return}
 if(tab==="payouts"){await payoutLoad();return}
 }
@@ -271,6 +273,24 @@ table(["Company","Integration","Status","Action"],(window.eksaIntegrations||[]).
 '<p>Endpoint: <code>https://suaghyqignjgqgwffzbt.supabase.co/functions/v1/eksa-partner-orders</code>. Send JSON via HTTPS POST with an <code>x-eksa-api-key</code> header. Store the key securely; it is displayed only once.</p>')+
 card("Companies",table(["Name","Code","Portal"],clients.map(c=>'<tr>'+cell(c.name)+cell(c.code)+'<td><a href="index.html">Company sign-in</a></td></tr>'))));
 }
+
+async function renderMapAccess(){
+ const response=await edge("eksa-map-planner",{action:"permissions_list"});
+ const accounts=response.accounts||[],companies=response.clients||[];
+ const options=companies.map(c=>'<option value="'+escape(c.id)+'">'+escape(c.name)+'</option>').join("");
+ const rows=accounts.map(a=>{const current=a.route_map||{};return '<tr><td>'+escape(a.full_name||a.user_id)+'</td><td>'+pill(a.role)+'</td><td><select data-map-company="'+escape(a.user_id)+'"><option value="">Select company</option>'+companies.map(c=>'<option value="'+escape(c.id)+'" '+(current.client_id===c.id?'selected':'')+'>'+escape(c.name)+'</option>').join("")+'</select></td><td><input type="checkbox" data-map-enabled="'+escape(a.user_id)+'" '+(current.enabled?'checked':'')+' aria-label="Allow route map access"></td><td><button type="button" class="minibtn" data-map-save="'+escape(a.user_id)+'">Save</button></td></tr>'}).join("");
+ setView(card("Route map permissions",'<p>Administrators can grant company-specific map planning access to individual accounts. Company users can only receive access to their own company. Access is denied by default.</p>'+table(["Account","Role","Company scope","Enabled","Action"],rows?accounts.map(a=>{const current=a.route_map||{};return '<tr><td>'+escape(a.full_name||a.user_id)+'</td><td>'+pill(a.role)+'</td><td><select data-map-company="'+escape(a.user_id)+'"><option value="">Select company</option>'+companies.map(c=>'<option value="'+escape(c.id)+'" '+(current.client_id===c.id?'selected':'')+'>'+escape(c.name)+'</option>').join("")+'</select></td><td><input type="checkbox" data-map-enabled="'+escape(a.user_id)+'" '+(current.enabled?'checked':'')+' aria-label="Allow route map access"></td><td><button type="button" class="minibtn" data-map-save="'+escape(a.user_id)+'">Save</button></td></tr>'}):[])));
+}
+E("view").addEventListener("click",async e=>{
+ const button=e.target.closest("[data-map-save]");if(!button||role!=="admin")return;
+ const id=button.dataset.mapSave;
+ const company=Array.from(E("view").querySelectorAll("[data-map-company]")).find(x=>x.dataset.mapCompany===id);
+ const enabled=Array.from(E("view").querySelectorAll("[data-map-enabled]")).find(x=>x.dataset.mapEnabled===id);
+ if(!company||!enabled)return;
+ button.disabled=true;
+ try{const result=await edge("eksa-map-planner",{action:"set_permission",user_id:id,client_id:company.value||null,enabled:enabled.checked});if(!result.success)throw Error(result.error||"Permission not saved");notify("Map permission saved.","ok");await renderMapAccess()}
+ catch(err){notify(err.message||"Permission save failed")}finally{button.disabled=false}
+});
 async function payoutLoad(){
 const payouts=await edge("eksa-owner",{action:"payouts"});
 const names=Object.fromEntries(drivers.map(d=>[d.id,d.display_name]));
