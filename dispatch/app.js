@@ -23,7 +23,7 @@ const edge=(name,data)=>request("/functions/v1/"+name,data);
 const rest=(table,params)=>request("/rest/v1/"+table+"?"+params);
 const dayDefault=()=>{const fmt=new Intl.DateTimeFormat("en-CA",{timeZone:"America/Toronto",year:"numeric",month:"2-digit",day:"2-digit"});const ps=fmt.formatToParts(new Date());const parts=Object.fromEntries(ps.map(p=>[p.type,p.value]));return parts.year+"-"+parts.month+"-"+parts.day};
 function tabList(){
-if(role==="admin")return [["overview","Overview"],["orders","Orders"],["routes","Routes & Map"],["drivers","Drivers"],["analytics","Analytics"],["payouts","Payouts"],["companies","Companies"],["mapaccess","Map permissions"],["notifications","Notifications"]];
+if(role==="admin")return [["overview","Overview"],["orders","Orders"],["routes","Routes & Map"],["drivers","Drivers"],["analytics","Analytics"],["payouts","Payouts"],["companies","Companies"],["mapaccess","Map permissions"],["featureaccess","Feature permissions"],["notifications","Notifications"]];
 if(role==="driver")return [["today","My routes"],["map","Stops & navigation"],["earnings","My earnings"]];
 return [["company","Overview"],["companyorders","Orders"],["companymap","Delivery map"],["invoices","Invoices"]];
 }
@@ -36,6 +36,7 @@ drivers:'<circle cx="12" cy="8" r="4"/><path d="M4 21v-2a8 8 0 0 1 16 0v2"/>',
 analytics:'<path d="M4 20V12m5 8V7m5 13v-9m5 9V4"/>',
 payouts:'<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><circle cx="12" cy="15" r="2"/>',
 companies:'<path d="M3 21V7l9-4 9 4v14zM8 11h1m6 0h1M8 15h1m6 0h1M10 21v-4h4v4"/>',
+featureaccess:'<path d="M4 6h16M4 12h16M4 18h16M8 4v4m8 2v4m-8 2v4"/>',
 mapaccess:'<path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3zM9 3v15m6-12v15"/>',
 notifications:'<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/>',
 today:'<path d="M3 9h18M7 9V5h10v4M4 9v11h16V9M9 14h6"/>',
@@ -83,6 +84,7 @@ if(tab==="routes"){routes=await rest("routes","select=id,city_group,route_date,s
 if(tab==="drivers"){routes=await rest("routes","select=id,driver_id,status&limit=1000");renderDrivers();return}
 if(tab==="companies"){window.eksaIntegrations=(await edge("eksa-users",{action:"list_integrations"})).integrations||[];renderCompanies();return}
 if(tab==="mapaccess"){await renderMapAccess();return}
+if(tab==="featureaccess"){await renderFeatureAccess();return}
 if(tab==="notifications"){await renderNotifications();return}
 if(tab==="payouts"){await payoutLoad();return}
 }
@@ -274,6 +276,26 @@ table(["Company","Integration","Status","Action"],(window.eksaIntegrations||[]).
 card("Companies",table(["Name","Code","Portal"],clients.map(c=>'<tr>'+cell(c.name)+cell(c.code)+'<td><a href="index.html">Company sign-in</a></td></tr>'))));
 }
 
+
+const FEATURE_LABELS={orders_view:"View orders",orders_manage:"Create / edit orders",labels_print:"Print barcode labels",route_map:"Route map",delivery_reports:"Delivery reports",invoices_view:"Invoices",driver_routes:"Driver routes",delivery_scan:"Pickup / delivery scanning",pod_view:"View proof of delivery"};
+async function renderFeatureAccess(){
+ const result=await edge("eksa-users",{action:"feature_permissions_list"});
+ const accounts=result.accounts||[];
+ const groups=accounts.map(a=>{
+  const controls=(result.features||[]).map(k=>'<label style="display:flex;align-items:center;gap:10px;padding:5px 0"><input type="checkbox" style="width:auto" data-feature="'+escape(k)+'" '+(a.features[k]?'checked':'')+'>'+escape(FEATURE_LABELS[k]||k)+'</label>').join("");
+  return '<section class="card" data-feature-user="'+escape(a.user_id)+'"><h3>'+escape(a.full_name||a.user_id)+'</h3><p>'+escape(a.role.toUpperCase())+(a.client_id?' · Company account':'')+'</p><div class="cols">'+controls+'</div><button type="button" data-feature-save="'+escape(a.user_id)+'">Save permissions</button></section>';
+ }).join("");
+ setView('<p>Choose the features available to each company or driver account. Permissions are saved to Supabase and enforced by participating backend services. Portal navigation visibility is being aligned separately.</p>'+(groups||card("No accounts","Invite a company user or driver first.")));
+}
+E("view").addEventListener("click",async e=>{
+ const button=e.target.closest("[data-feature-save]");if(!button||role!=="admin")return;
+ const panel=button.closest("[data-feature-user]");if(!panel)return;
+ const features=Object.fromEntries(Array.from(panel.querySelectorAll("[data-feature]")).map(el=>[el.dataset.feature,el.checked]));
+ button.disabled=true;
+ try{const result=await edge("eksa-users",{action:"feature_permissions_save",user_id:button.dataset.featureSave,features});if(!result.success)throw Error(result.error||"Save failed");notify("Feature permissions saved.","ok")}
+ catch(err){notify(err.message||"Could not save permissions")}
+ finally{button.disabled=false}
+});
 async function renderMapAccess(){
  const response=await edge("eksa-map-planner",{action:"permissions_list"});
  const accounts=response.accounts||[],companies=response.clients||[];
