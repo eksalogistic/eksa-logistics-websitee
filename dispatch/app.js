@@ -256,7 +256,7 @@ const look=Object.fromEntries(drivers.map(x=>[x.id,x.display_name]));
 const options=drivers.filter(x=>x.active).map(x=>'<option value="'+escape(x.id)+'">'+escape(x.display_name)+'</option>').join("");
 const tableRows=routes.map(r=>'<tr>'+cell(r.city_group)+cell(r.route_date)+'<td>'+pill(r.status)+'</td>'+cell(look[r.driver_id]||"Unassigned")+'<td><div class="actions"><button class="minibtn" data-map="'+escape(r.id)+'">Map</button><button class="minibtn mutedbtn" data-opt-preview="'+escape(r.id)+'">Check optimization</button>'+
 (!r.driver_id?'<select style="max-width:180px" data-pick="'+escape(r.id)+'"><option value="">Select driver</option>'+options+'</select><button class="minibtn" data-assign="'+escape(r.id)+'">Assign</button>':"")+'</div></td></tr>');
-setView(card("Create routes",'<form class="flex" id="createRoute"><div class="field"><label>City</label><input name="city" required value="Brampton"></div><div class="field"><label>Maximum bags per route</label><input name="bags" type="number" min="1" max="300" value="80" required></div><button>Create routes</button></form><p>Routes can be planned and assigned before bags are scanned. Drivers confirm pickup before departure.</p>')+card("Assigned and draft routes",table(["City","Date","Status","Driver","Actions"],tableRows))+'<section id="routeMapArea"></section>');
+setView(card("Address verification",'<p>Map pins require Google-verified street coordinates. Process pending addresses before opening a route map.</p><button type="button" id="verifyPendingAddresses">Verify pending addresses</button><p class="subtle" id="geocodeResult" aria-live="polite"></p>')+card("Create routes",'<form class="flex" id="createRoute"><div class="field"><label>City</label><input name="city" required value="Brampton"></div><div class="field"><label>Maximum bags per route</label><input name="bags" type="number" min="1" max="300" value="80" required></div><button>Create routes</button></form><p>Routes can be planned and assigned before bags are scanned. Drivers confirm pickup before departure.</p>')+card("Assigned and draft routes",table(["City","Date","Status","Driver","Actions"],tableRows))+'<section id="routeMapArea"></section>');
 }
 function renderDrivers(){
 setView(tiles([metric(drivers.length,"Registered"),metric(drivers.filter(x=>x.active).length,"Active"),metric(drivers.filter(x=>!x.active).length,"Inactive"),metric(routes.length,"Routes in system")])+
@@ -281,6 +281,17 @@ async function renderMapAccess(){
  const rows=accounts.map(a=>{const current=a.route_map||{};return '<tr><td>'+escape(a.full_name||a.user_id)+'</td><td>'+pill(a.role)+'</td><td><select data-map-company="'+escape(a.user_id)+'"><option value="">Select company</option>'+companies.map(c=>'<option value="'+escape(c.id)+'" '+(current.client_id===c.id?'selected':'')+'>'+escape(c.name)+'</option>').join("")+'</select></td><td><input type="checkbox" data-map-enabled="'+escape(a.user_id)+'" '+(current.enabled?'checked':'')+' aria-label="Allow route map access"></td><td><button type="button" class="minibtn" data-map-save="'+escape(a.user_id)+'">Save</button></td></tr>'}).join("");
  setView(card("Route map permissions",'<p>Administrators can grant company-specific map planning access to individual accounts. Company users can only receive access to their own company. Access is denied by default.</p>'+table(["Account","Role","Company scope","Enabled","Action"],rows?accounts.map(a=>{const current=a.route_map||{};return '<tr><td>'+escape(a.full_name||a.user_id)+'</td><td>'+pill(a.role)+'</td><td><select data-map-company="'+escape(a.user_id)+'"><option value="">Select company</option>'+companies.map(c=>'<option value="'+escape(c.id)+'" '+(current.client_id===c.id?'selected':'')+'>'+escape(c.name)+'</option>').join("")+'</select></td><td><input type="checkbox" data-map-enabled="'+escape(a.user_id)+'" '+(current.enabled?'checked':'')+' aria-label="Allow route map access"></td><td><button type="button" class="minibtn" data-map-save="'+escape(a.user_id)+'">Save</button></td></tr>'}):[])));
 }
+E("view").addEventListener("click",async e=>{
+ const button=e.target.closest("#verifyPendingAddresses");if(!button||role!=="admin")return;
+ button.disabled=true;
+ const output=E("geocodeResult");if(output)output.textContent="Verifying pending addresses…";
+ try{
+  const result=await edge("eksa-geocode-worker",{action:"process",limit:20});
+  if(!result.success)throw Error(result.error||"Address verification unavailable");
+  const summary="Processed "+(result.processed||0)+", verified "+(result.verified||0)+", need review "+(result.review||0)+", errors "+(result.errors||0)+". Open the route map again to refresh pins.";
+  if(output)output.textContent=summary;notify(summary,result.errors?"bad":"ok");
+ }catch(err){if(output)output.textContent=err.message;notify("Geocoding: "+err.message)}finally{button.disabled=false}
+});
 E("view").addEventListener("click",async e=>{
  const button=e.target.closest("[data-map-save]");if(!button||role!=="admin")return;
  const id=button.dataset.mapSave;
