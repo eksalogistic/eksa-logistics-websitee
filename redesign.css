@@ -146,3 +146,46 @@ h1, h2, h3 {
 .coverage-picker label { font-weight: 700; }
 .coverage-picker select { width: 100%; min-height: 44px; font: inherit; }
 .coverage-picker p:empty { display: none; }
+
+.partner-strip {
+  border-block: 1px solid #dce0eb;
+  padding-block: 1rem;
+  margin-bottom: 1.75rem;
+}
+
+.partner-strip ul {
+  flex: 1 1 38rem;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: .75rem;
+}
+
+.partner-strip li {
+  display: grid;
+  place-items: center;
+  min-height: 4.5rem;
+  text-align: center;
+}
+
+.partner-logo {
+  display: block;
+  width: min(100%, 9.75rem);
+  height: 3.75rem;
+  object-fit: contain;
+}
+
+.fusion-feast { height: 4.5rem; }
+
+.free-will-wordmark {
+  padding: .45rem .65rem;
+  color: white;
+  background: #252525;
+  font-size: clamp(.69rem, 1.3vw, .9rem);
+  font-weight: 800;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+}
+
+@media (max-width: 560px) {
+  .partner-strip ul { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
