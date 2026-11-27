@@ -98,7 +98,13 @@ function home() {
     <img src="${foodImage}" alt="Prepared food ready for delivery" fetchpriority="high">
   </div></section>
   <section class="container partner-strip" aria-labelledby="partners-title">
-    <h2 id="partners-title">Trusted by</h2><ul><li>Fusion Feast</li><li>Free Will Eats</li><li>TiffinStash</li><li>I.D.A.</li></ul>
+    <h2 id="partners-title">Trusted by</h2>
+    <ul>
+      <li><img class="partner-logo fusion-feast" src="https://fusionfeasts.ca/images/fusion-feast-logo.png" alt="Fusion Feast" decoding="async"></li>
+      <li><span class="free-will-wordmark">Free Will Eats</span></li>
+      <li><img class="partner-logo" src="https://images.yourstory.com/cs/images/companies/smfzwzabhpbhjgdk-1712293581191.png?fm=auto&amp;q=85&amp;w=480" alt="TiffinStash" decoding="async"></li>
+      <li><img class="partner-logo" src="https://images.squarespace-cdn.com/content/v1/630cbf60ee7e97466f41c84f/4c35ee01-0bdb-45f8-93f7-dcb0fea66d62/CustomerLogos_New6.png?format=300w" alt="I.D.A. Pharmacy" decoding="async"></li>
+    </ul>
   </section>
   <section class="container redesign-services" aria-label="Delivery services">
     ${services.map(([title, , path, image]) => `<a href="#${path}"><img src="${image}" alt="" loading="lazy"><span>${title}</span></a>`).join('')}
