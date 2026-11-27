@@ -112,8 +112,8 @@ const textArea=(name,label)=>`<div class="field full"><label for="${name}">${lab
 const baseFields=field('contactName','Contact name')+field('email','Business email','email')+field('phone','Phone number','tel');
 const volumes=['1–20 per day','21–50 per day','51–100 per day','100+ per day','Varies / not sure'];
 function form(kind, compact = false){let title='',fields='';
-if(kind==='business'){title='Business partnership inquiry';fields=field('company','Company name')+baseFields+select('businessType','Business type',['Meal prep','Tiffin service','Prepared food','Other food business','Other'])+field('pickup','Primary pickup city / location')+field('serviceAreas','Delivery cities / service areas')+select('volume','Estimated daily deliveries',volumes)+select('frequency','Delivery frequency',['Daily','Weekdays','Weekends','Several times a week','Occasional / on demand'])+textArea('details','Service requirements or questions')}
-if(kind==='pharmacy'){title='Pharmacy partnership inquiry';fields=field('pharmacy','Pharmacy name')+baseFields+field('pickup','Pharmacy pickup city / location')+field('serviceAreas','Delivery cities / service areas')+select('volume','Estimated daily deliveries',volumes)+select('window','Preferred pickup window',['Morning','Afternoon','Evening','Multiple pickups','To be discussed'])+select('frequency','Pickup frequency',['Daily','Weekdays','Weekends','Several times a week','To be discussed'])+textArea('details','Handling and scheduling requirements (no patient information)')}
+if(kind==='business'){title='Request a food delivery quote';fields=field('company','Company name')+baseFields+select('businessType','Business type',['Meal prep','Tiffin service','Prepared food','Other food business','Other'])+field('pickup','Primary pickup city / location')+field('serviceAreas','Delivery cities / service areas')+select('volume','Estimated daily deliveries',volumes)+select('frequency','Delivery frequency',['Daily','Weekdays','Weekends','Several times a week','Occasional / on demand'])+textArea('details','Service requirements or questions')}
+if(kind==='pharmacy'){title='Set up pharmacy delivery';fields=field('pharmacy','Pharmacy name')+baseFields+field('pickup','Pharmacy pickup city / location')+field('serviceAreas','Delivery cities / service areas')+select('volume','Estimated daily deliveries',volumes)+select('window','Preferred pickup window',['Morning','Afternoon','Evening','Multiple pickups','To be discussed'])+select('frequency','Pickup frequency',['Daily','Weekdays','Weekends','Several times a week','To be discussed'])+textArea('details','Handling and scheduling requirements (no patient information)')}
 if(kind==='driver'){title='Driver application';fields=field('fullName','Full name')+field('email','Email','email')+field('phone','Phone number','tel')+select('vehicle','Vehicle type',['Sedan','SUV','Minivan','Cargo van','Electric vehicle','Other'])+field('city','Home city / preferred service area')+select('availability','Availability',['Weekdays','Weekends','Both weekdays and weekends','Flexible'])+select('experience','Delivery experience',['New to delivery','Less than 1 year','1–3 years','3+ years'])+select('licenseConfirmed','Do you hold a valid driver’s licence?',['Yes','No'])+textArea('details','Additional information (optional; no document uploads)')}
 if(kind==='contact'){title='General inquiry';fields=field('fullName','Full name')+field('email','Email','email')+field('phone','Phone number','tel',false)+select('topic','Inquiry type',['Business partnership','Pharmacy partnership','Driver opportunity','General question'])+textArea('details','Your message')}
 if(compact){fields=field('fullName','Name')+field('email','Email','email')+field('company','Company (optional)','text',false)+`<div class="field full"><label for="details">Message *</label><textarea id="details" name="details" placeholder="Tell us about your delivery needs…" required></textarea></div>`}
@@ -129,12 +129,12 @@ const processIcons = {
 function deliveryProcess(pharmacy) {
   const items = pharmacy ? [
     ['calendar', 'Scheduled pickups', 'Set up recurring pickup windows that fit your pharmacy’s workflow.'],
-    ['confirmed', 'Delivery confirmation', 'Get clear confirmation once a prescription delivery is complete.'],
+    ['confirmed', 'Delivery confirmation', 'Review the delivery record after the prescription handoff is complete.'],
     ['team', 'Support for your pharmacy team', 'Contact our team for schedule changes, delivery questions, or exceptions.'],
   ] : [
     ['calendar', 'Schedule pickup', 'Tell us when and where to collect your prepared orders.'],
     ['truck', 'We deliver your orders', 'Our drivers collect your orders and deliver them along your scheduled GTA route.'],
-    ['delivered', 'Get delivery confirmation', 'See which orders have been delivered once your run is complete.'],
+    ['delivered', 'Get delivery confirmation', 'Use delivery confirmations to reconcile orders from your food delivery run.'],
   ];
   return `<section class="delivery-process ${pharmacy?'pharmacy-process':'food-process'}" aria-labelledby="delivery-process-title">
     <div class="container">
@@ -151,7 +151,42 @@ function deliveryProcess(pharmacy) {
   </section>`;
 }
 
-function partnership(kind){const pharmacy=kind==='pharmacy';return `${pageHero(pharmacy?'Pharmacy delivery':'Food delivery',pharmacy?'Your patients deserve a dependable delivery experience.':'Food delivery for GTA businesses.',pharmacy?'Coordinate pharmacy pickups and deliveries with an operations-focused local courier partner.':'Scheduled delivery for meal prep companies, tiffin services and other prepared food businesses.',pharmacy?IMG.pharmacy:IMG.food )}${deliveryProcess(pharmacy)}<section class="section soft"><div class="container form-wrap"><div><span class="eyebrow">Let's work together</span><h2>${pharmacy?'Pharmacy delivery, thoughtfully coordinated.':'Built around your delivery needs.'}</h2><p class="section-intro">${pharmacy?'Discuss pickup schedules, delivery zones, handling expectations and reporting requirements with EKSA.':'Tell us your pickup locations, delivery volumes and operational needs. We can discuss a suitable service model.'}</p><ul class="checks">${(pharmacy?['Scheduled pharmacy pickups','Documented delivery and exception workflows','Delivery status communication','Handling requirements reviewed during onboarding']:['Flexible delivery capacity','Recurring and scheduled routes','Centralized dispatch coordination','Service-area planning and reporting']).map(x=>`<li>${x}</li>`).join('')}</ul><div class="notice">${pharmacy?'Pharmacy partnerships require appropriate privacy, security, and medication-handling arrangements before any patient-related deliveries begin.':'Service availability, pricing and operating commitments are confirmed through an individual partnership agreement.'}</div></div>${form(kind)}</div></section>`}
+function foodDelivery() {
+  return `${pageHero('Food delivery', 'Meal prep delivery for GTA businesses.', 'We pick up prepared orders from your kitchen and run scheduled deliveries for meal prep companies, tiffin services, and other prepared food businesses.', IMG.food)}
+  ${deliveryProcess(false)}
+  <section class="section soft"><div class="container form-wrap">
+    <div>
+      <span class="eyebrow">Food delivery quote</span>
+      <h2>Plan deliveries around your kitchen schedule.</h2>
+      <p class="section-intro">Share your kitchen pickup location, delivery days, and typical order count. We’ll review your delivery zones and build a quote around your routes.</p>
+      <ul class="checks">
+        <li>Pickup timing based on when your orders are packed and ready</li>
+        <li>Delivery windows and coverage for each recurring route</li>
+        <li>Insulated bag and bag return arrangements, where needed</li>
+      </ul>
+    </div>
+    ${form('business')}
+  </div></section>`;
+}
+
+function pharmacyDelivery() {
+  return `${pageHero('Pharmacy delivery', 'Prescription delivery for GTA pharmacies.', 'Arrange recurring pickups from your pharmacy and agree on how your team receives delivery confirmations and updates when a handoff can’t be completed.', IMG.pharmacy)}
+  ${deliveryProcess(true)}
+  <section class="section soft"><div class="container form-wrap">
+    <div>
+      <span class="eyebrow">Pharmacy partnership</span>
+      <h2>Set up a delivery workflow for your pharmacy.</h2>
+      <p class="section-intro">Tell us your preferred pickup windows, delivery area, and the handoff instructions your pharmacy needs drivers to follow. During onboarding, we’ll agree on how we document completed deliveries and handle unsuccessful attempts.</p>
+      <ul class="checks">
+        <li>Pickup windows that fit your dispensing schedule</li>
+        <li>Handoff instructions and delivery confirmation requirements</li>
+        <li>Escalation and return procedures for unsuccessful deliveries</li>
+      </ul>
+      <div class="notice">Please leave patient names, addresses, and prescription details out of this inquiry.</div>
+    </div>
+    ${form('pharmacy')}
+  </div></section>`;
+}
 function driver(){return `${pageHero('Driver opportunities','Drive your next opportunity with EKSA.','Join our network of independent delivery professionals serving the Greater Toronto Area.',IMG.driver)}<section class="section soft"><div class="container form-wrap"><div><span class="eyebrow">Join the network</span><h2>Built for dependable owner-operators.</h2><p class="section-intro">We look for reliable, service-focused drivers who communicate clearly, follow procedures and can commit to their assigned schedules.</p><ul class="checks"><li>Delivery opportunities across GTA service areas</li><li>Route and dispatch coordination</li><li>Clear onboarding and delivery expectations</li><li>Opportunities based on operational demand</li></ul><div class="notice">Submitting an inquiry is not a job offer. Vehicle, insurance, driving record, training and eligibility requirements will be verified during onboarding.</div></div>${form('driver')}</div></section>`}
 function servicePage(){return `${pageHero('Our services','Last-mile solutions for the way you operate.','Scheduled food and pharmacy delivery across Toronto and the GTA.',IMG.logistics)}<section class="section"><div class="container"><div class="cards service-cards">${services.map(s=>card(s[3],s[0],s[1],s[2])).join('')}</div></div></section>${cta('Need a custom delivery plan?','Tell us about your business and delivery needs.','businesses','Discuss a Solution')}`}
 function about(){return `${pageHero('About EKSA','Driven by service. Built on relationships.','EKSA Logistics Inc. is a GTA-focused last-mile delivery business committed to practical, flexible service.',IMG.city)}<section class="section"><div class="container split"><div><span class="eyebrow">Our approach</span><h2>Local delivery for food and pharmacy businesses.</h2><p class="section-intro">Every delivery represents a customer expectation and a business relationship. We work to coordinate dependable delivery operations while staying responsive to the businesses and communities we serve.</p><ul class="checks"><li>Locally focused delivery operations</li><li>Clear communication with partners</li><li>Careful route and driver coordination</li><li>Flexible solutions as your business grows</li></ul></div><img src="${IMG.warehouse}" alt="Logistics operations" loading="lazy"></div></section>${coverage()}`}
@@ -178,6 +213,6 @@ function portal() {
     </div>
   </div></section>`;
 }
-const pages={home,businesses:()=>partnership('business'),pharmacies:()=>partnership('pharmacy'),drivers:driver,services:servicePage,about,contact,portal};
+const pages={home,businesses:foodDelivery,pharmacies:pharmacyDelivery,drivers:driver,services:servicePage,about,contact,portal};
 function render(){const name=location.hash.slice(1).split('?')[0]||'home';const route=pages[name]?name:'home';document.querySelector('#app').innerHTML=pages[route]();document.title=(route==='home'?'EKSA Logistics':route[0].toUpperCase()+route.slice(1)+' | EKSA Logistics')+' — Dreams Delivered';document.querySelectorAll('#main-nav a').forEach(a=>{const active=a.getAttribute('href')==='#'+route;a.classList.toggle('active',active);if(active)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current')});document.querySelector('#main-nav').classList.remove('open');document.querySelector('.menu-toggle').setAttribute('aria-expanded','false');connectCoveragePicker();const section=location.hash.split('?')[1];if(route==='home'&&section==='section=coverage'){document.getElementById('coverage').scrollIntoView();}else{window.scrollTo({top:0,behavior:'instant'});}document.querySelectorAll('form').forEach(f=>{f.dataset.startedAt=String(Date.now());f.addEventListener('submit',submitEksaForm)})}
 document.querySelector('.menu-toggle').addEventListener('click',()=>{const n=document.querySelector('#main-nav');n.classList.toggle('open');document.querySelector('.menu-toggle').setAttribute('aria-expanded',String(n.classList.contains('open')))});document.getElementById('year').textContent=new Date().getFullYear();window.addEventListener('hashchange',render);render();
