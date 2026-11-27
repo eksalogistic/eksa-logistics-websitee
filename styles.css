@@ -249,3 +249,12 @@ footer { padding-top:28px; background:#07143a; }
   .partner-logo.fusion-feasts { height:48px; border:0; }
   .mock-services { grid-template-columns:1fr; gap:10px; }
 }
+
+.footer-grid a:not(.brand) { text-decoration: none; }
+.footer-grid a:not(.brand):hover,
+.footer-grid a:not(.brand):focus-visible { text-decoration: underline; }
+.mock-hero-frame img { transform: skewX(18deg); object-position: center; }
+@media (min-width: 821px) {
+  .mock-hero-grid { min-height: clamp(350px, 31vw, 470px); }
+  .mock-hero-frame { margin-right: calc((min(1240px, 100vw) - 100vw) / 2 - 28px); }
+}
