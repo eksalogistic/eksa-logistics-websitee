@@ -1,0 +1,191 @@
+:root {
+  --eksa-blue: #1338ec;
+  --eksa-ink: #0b1230;
+  --eksa-paper: #fbfaf7;
+}
+
+body {
+  background: var(--eksa-paper);
+  color: var(--eksa-ink);
+  font-family: Inter, system-ui, sans-serif;
+}
+
+h1, h2, h3 {
+  font-family: "Plus Jakarta Sans", Inter, system-ui, sans-serif;
+  letter-spacing: -.035em;
+}
+
+.site-header .brand img, .footer-grid .brand img {
+  width: auto;
+  height: 58px;
+  object-fit: contain;
+}
+
+.site-header .brand > span {
+  display: none;
+}
+
+.redesign-hero {
+  padding: clamp(2rem, 5vw, 5rem) 0;
+}
+
+.redesign-hero-grid {
+  display: grid;
+  grid-template-columns: 1fr 1.1fr;
+  align-items: center;
+  gap: clamp(1.5rem, 5vw, 5rem);
+}
+
+.redesign-hero h1 {
+  font-size: clamp(2.5rem, 6vw, 5.6rem);
+  line-height: 1.03;
+  font-weight: 800;
+  margin: 0 0 1rem;
+}
+
+.redesign-hero-grid img {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border: solid var(--eksa-blue);
+  border-width: 0 0 .65rem .65rem;
+  border-radius: 0 1rem 0 3rem;
+}
+
+.redesign-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .9rem 1.4rem;
+  margin-top: 1.6rem;
+}
+
+.redesign-actions > a:not(.btn), .contact-section p a {
+  color: var(--eksa-ink);
+  text-decoration: underline;
+  text-underline-offset: .2em;
+}
+
+.partner-strip, .partner-strip ul {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .8rem 1.5rem;
+}
+
+.partner-strip {
+  padding-block: 1rem 2rem;
+}
+
+.partner-strip h2 { font-size: 1.2rem; margin: 0; }
+.partner-strip ul { list-style: none; margin: 0; padding: 0; font-weight: 700; }
+
+.redesign-services {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  padding-bottom: 2.75rem;
+}
+
+.redesign-services a {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  align-items: end;
+  min-height: clamp(10rem, 25vw, 20rem);
+  overflow: hidden;
+  border-radius: 1rem;
+  background: var(--eksa-ink);
+  color: white;
+}
+
+.redesign-services a::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(transparent 35%, rgb(11 18 48 / 92%));
+}
+
+.redesign-services img {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.redesign-services span {
+  padding: 1rem;
+  font: 800 clamp(1.4rem, 3vw, 2.5rem) "Plus Jakarta Sans", Inter, sans-serif;
+}
+
+#coverage { scroll-margin-top: 6rem; }
+.contact-section .form-panel { min-width: 0; }
+.privacy-content { max-width: 50rem; }
+
+.footer-grid a:not(.brand), .footer-bottom a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: .18em;
+}
+
+@media (max-width: 760px) {
+  .redesign-hero-grid, .redesign-services { grid-template-columns: 1fr; }
+  .redesign-hero-grid img { aspect-ratio: 16 / 10; }
+}
+
+.coverage-picker {
+  display: grid;
+  gap: .45rem;
+  margin-top: 1.25rem;
+  max-width: 23rem;
+}
+
+.coverage-picker label { font-weight: 700; }
+.coverage-picker select { width: 100%; min-height: 44px; font: inherit; }
+.coverage-picker p:empty { display: none; }
+
+.partner-strip {
+  border-block: 1px solid #dce0eb;
+  padding-block: 1rem;
+  margin-bottom: 1.75rem;
+}
+
+.partner-strip ul {
+  flex: 1 1 38rem;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: .75rem;
+}
+
+.partner-strip li {
+  display: grid;
+  place-items: center;
+  min-height: 4.5rem;
+  text-align: center;
+}
+
+.partner-logo {
+  display: block;
+  width: min(100%, 9.75rem);
+  height: 3.75rem;
+  object-fit: contain;
+}
+
+.fusion-feast { height: 4.5rem; }
+
+.free-will-wordmark {
+  padding: .45rem .65rem;
+  color: white;
+  background: #252525;
+  font-size: clamp(.69rem, 1.3vw, .9rem);
+  font-weight: 800;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+}
+
+@media (max-width: 560px) {
+  .partner-strip ul { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
