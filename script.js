@@ -205,13 +205,24 @@ function contact() {
 }
 
 function portal() {
-  return `<section class="section soft portal-section"><div class="container">
-    <div class="form-panel">
-      <h1>Delivery Portal</h1>
-      <p>Sign in to EKSA Dispatch with your customer, driver or admin account.</p>
-      <a class="btn" href="https://dispatch.eksalogistic.ca/">Sign in to EKSA Dispatch</a>
+  return `<section class="portal-entry" aria-labelledby="portal-title">
+    <div class="portal-skyline">
+      <div class="portal-intro">
+        <p aria-hidden="true">Delivery<br>Portal</p>
+        <span>For authorized clients, drivers and EKSA staff.</span>
+      </div>
+      <img src="/portal-skyline.webp" alt="" width="475" height="780">
     </div>
-  </div></section>`;
+    <div class="portal-access">
+      <div class="portal-card">
+        <img src="/eksa-logo.jpg" alt="EKSA Logistics" width="961" height="252">
+        <h1 id="portal-title">Delivery Portal</h1>
+        <p>Sign in with your EKSA customer, driver or staff account.</p>
+        <a class="btn" href="https://dispatch.eksalogistic.ca/">Sign in to EKSA Dispatch</a>
+        <a class="portal-back" href="#home">← Back to EKSA Logistics</a>
+      </div>
+    </div>
+  </section>`;
 }
 const pages={home,businesses:foodDelivery,pharmacies:pharmacyDelivery,drivers:driver,services:servicePage,about,contact,portal};
 function render(){const name=location.hash.slice(1).split('?')[0]||'home';const route=pages[name]?name:'home';document.querySelector('#app').innerHTML=pages[route]();document.title=(route==='home'?'EKSA Logistics':route[0].toUpperCase()+route.slice(1)+' | EKSA Logistics')+' — Dreams Delivered';document.querySelectorAll('#main-nav a').forEach(a=>{const active=a.getAttribute('href')==='#'+route;a.classList.toggle('active',active);if(active)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current')});document.querySelector('#main-nav').classList.remove('open');document.querySelector('.menu-toggle').setAttribute('aria-expanded','false');connectCoveragePicker();const section=location.hash.split('?')[1];if(route==='home'&&section==='section=coverage'){document.getElementById('coverage').scrollIntoView();}else{window.scrollTo({top:0,behavior:'instant'});}document.querySelectorAll('form').forEach(f=>{f.dataset.startedAt=String(Date.now());f.addEventListener('submit',submitEksaForm)})}
