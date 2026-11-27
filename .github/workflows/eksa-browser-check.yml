@@ -1,0 +1,62 @@
+name: EKSA redesign browser checks
+on:
+  push:
+    branches: [eksa-redesign-browser-check]
+permissions:
+  contents: read
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Install Chromium
+        run: |
+          npm install --no-save --ignore-scripts playwright@1.58.2
+          npx playwright install --with-deps chromium
+      - name: Check desktop and mobile
+        run: |
+          python3 -m http.server 8000 > /tmp/eksa-qa-http.log 2>&1 &
+          node <<'NODE'
+          const { chromium } = require('playwright');
+          const assert = require('node:assert/strict');
+          (async () => {
+            const browser = await chromium.launch();
+            try {
+              for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+                const page = await browser.newPage({ viewport });
+                page.setDefaultTimeout(10000);
+                const errors = [];
+                page.on('pageerror', error => errors.push(error.message));
+                const site = 'http://127.0.0.1:8000/';
+                await page.goto(site, { waitUntil: 'domcontentloaded' });
+                assert.match(await page.locator('h1').innerText(), /Local delivery/);
+                assert.equal(await page.locator('.partner-strip li').count(), 4);
+                assert.equal(await page.locator('footer a[href="https://dispatch.eksalogistic.ca/"]').count(), 1);
+                if (viewport.width === 390) {
+                  await page.locator('.menu-toggle').click();
+                  assert.equal(await page.locator('.menu-toggle').getAttribute('aria-expanded'), 'true');
+                  await page.locator('#main-nav a[href="#services"]').click();
+                  await page.waitForURL('**/#services');
+                  assert.equal(await page.locator('.menu-toggle').getAttribute('aria-expanded'), 'false');
+                }
+                await page.goto(site + '#home?section=coverage');
+                await page.locator('#coverage-city').selectOption('Toronto');
+                assert.match(await page.locator('#coverage-result').innerText(), /Toronto/);
+                for (const [route, kind] of [['businesses', 'business'], ['pharmacies', 'pharmacy'], ['drivers', 'driver'], ['contact', 'contact']]) {
+                  await page.goto(site + '#' + route);
+                  const form = page.locator('form[data-kind="' + kind + '"]');
+                  await form.waitFor();
+                  assert.equal(await form.locator('button[type=submit]').count(), 1);
+                  const width = await page.evaluate(() => document.documentElement.scrollWidth);
+                  assert.ok(width <= viewport.width, route + ' overflows at width ' + viewport.width);
+                }
+                assert.deepEqual(errors, []);
+                console.log('Passed browser checks at width', viewport.width);
+                await page.close();
+              }
+            } finally {
+              await browser.close();
+            }
+          })().catch(error => { console.error(error); process.exitCode = 1; });
+          NODE
